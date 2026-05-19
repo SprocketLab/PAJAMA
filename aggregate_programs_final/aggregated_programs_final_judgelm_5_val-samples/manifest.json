@@ -1,0 +1,11 @@
+{
+  "tag": "aggregated_programs_final_judgelm_5_val-samples",
+  "n_programs": 5,
+  "programs": [
+    "aggregated_judge_1",
+    "aggregated_judge_2",
+    "aggregated_judge_3",
+    "aggregated_judge_4",
+    "aggregated_judge_5"
+  ]
+}

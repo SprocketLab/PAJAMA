@@ -1,0 +1,1133 @@
+Looking at the failure cases carefully, I can identify several systematic patterns:
+
+1. **Audience mismatch**: Many failures involve queries explicitly requesting SIMPLE language (for beginners, kids, language learners), but the pipeline preferred jargon-heavy responses because they had more "specific terms" — the evidence-density heuristic was actively misleading.
+2. **Empathy in emotional queries**: Empathetic, hedging-friendly responses lost to clinical/dismissive ones.
+3. **Non-answers winning**: Off-topic rambling or "you'll figure it out" platitudes sometimes beat focused, useful responses.
+4. **Constraint compliance**: Allergy/dietary/style constraints from the query were ignored.
+5. **Scenario-of-failure descriptions**: Responses describing what NOT to do were preferred over those describing successful behavior.
+
+My 5 aggregated programs blend broad coverage with targeted denoising specialists.
+
+```
+=== AGGREGATED_PROGRAM_1 ===
+[description: Broad audience-aware quality scorer. Combines query-relevance overlap, content density, structure, and readability, but introduces an AUDIENCE GATE: when the query explicitly asks for simple/layman/beginner explanations, jargon and rare Latinate technical vocabulary INVERT sign — they become penalties. Otherwise, technical specificity is rewarded normally. Inspired by Programs 1, 6, 7 (relevance + density) with a denoising gate against jargon-mismatch failures (cases 1, 3, 4, 11, 16, 17, 29, 30, 32, 37, 38).]
+```
+
+```python
+def judging_function(query, response):
+    try:
+        import re, math
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        if not isinstance(query, str):
+            query = ""
+
+        resp = response.strip()
+        ql = (query or "").lower()
+        rl = resp.lower()
+        if len(resp) < 8:
+            return 1.0
+
+        words = re.findall(r"[a-zA-Z']+", rl)
+        n_words = len(words)
+        if n_words < 3:
+            return 1.0
+
+        sentences = [s.strip() for s in re.split(r'[.!?]+', resp) if len(s.strip()) > 2]
+        n_sents = max(len(sentences), 1)
+        avg_sl = n_words / n_sents
+
+        STOP = {'the','a','an','is','are','was','were','be','been','being','have','has','had',
+                'do','does','did','will','would','could','should','may','might','can','to',
+                'of','in','for','on','with','at','by','from','as','into','through','and','but',
+                'or','if','that','this','these','those','it','its','i','me','my','we','our',
+                'you','your','he','she','they','them','their','him','her','what','which','who',
+                'about','up','out','over','down','also','very','just','too','so','than','then',
+                'here','there','when','where','why','how','all','any','some','no','not','more',
+                'most','other','such','only','own','same','too','very','s','t','am','being'}
+
+        content = [w for w in words if w not in STOP and len(w) > 2]
+        n_content = len(content)
+
+        # ---------- 1. Audience detection: does query ask for simple language? ----------
+        simple_request_patterns = [
+            r'\bsimple(r| terms| words| language| way| explanation)?\b',
+            r'\blayman', r'\bnon[- ]?technical', r'\bwithout (jargon|technical|complex)',
+            r'\bbeginner', r'\bnovice', r'\bfirst time\b', r'\bnew to\b',
+            r'\beasy to (understand|grasp|follow)\b', r'\beasy[- ]friendly\b',
+            r'\bplain (english|language|terms)\b', r'\bavoiding (scientific )?jargon\b',
+            r'\bhigh school\b', r'\b\d+th grade\b', r'\bintermediate level\b',
+            r'\bbasic understanding\b', r'\blanguage barrier\b', r'\bforeigner\b',
+            r'\byoung (minds|students|learners)\b', r'\bkid(s|dies)?\b',
+            r'\bcasual\b.*\b(language|tone|laid[- ]back|slang)\b',
+            r'\bsuccinct\b', r'\bconcise\b', r'\bclear and simple\b',
+            r'\bjust starting\b', r'\bstruggle.*\bcomplex\b', r'\bgrade\b',
+        ]
+        wants_simple = any(re.search(p, ql) for p in simple_request_patterns)
+
+        # ---------- 2. Audience detection: does query ask for expert/academic register? ----------
+        expert_request_patterns = [
+            r'\b(academic|expert|professional|technical|scholarly) (audience|terminology|language|jargon)\b',
+            r'\bphd\b', r'\bresearcher\b', r'\bscholarly\b', r'\bsymposium\b',
+            r'\bcomprehensive review\b', r'\bdetailed (information|analysis)\b',
+            r'\bspecializ\w+ in\b', r'\bbioinformatics\b', r'\bcomprehensive study\b',
+            r'\bsocio-?political\b', r'\bexpert in\b',
+        ]
+        wants_expert = any(re.search(p, ql) for p in expert_request_patterns)
+
+        # ---------- 3. Jargon / technical word counting ----------
+        jargon_suffix_pat = re.compile(
+            r'\b\w*(tion|sion|ology|ography|metry|tropic|trophic|otic|ynth|chemic|lytic|onomic|'
+            r'cyte|plasm|chromat|emiology|ostasis|cardial|chondria|genesis|morphic)\w*\b',
+            re.IGNORECASE)
+        long_words = [w for w in content if len(w) >= 9]
+        tech_suffixes = jargon_suffix_pat.findall(resp)
+        jargon_density = (len(long_words) + len(tech_suffixes) * 0.5) / max(n_content, 1)
+
+        # Latinate / scientific lexicon
+        sci_terms = re.findall(
+            r'\b(biochemical|autotrophic|chlorophyll|chloroplast|photolysis|redox|'
+            r'quantum|qubit|chromodynamic|hadron|gluon|quark|cuneiform|ziggurat|'
+            r'inertia|momentum|VO2|anaerobic|aerobic|lactic|protocol|algorithm|'
+            r'inelastic|asymptotic|stochastic|paradigm|empirical|epistemological|'
+            r'eschatolog|hermeneutic|phenomenological|ontological|electromagnetic|'
+            r'electromechanical|reminiscent|decennium|elucidation|residential|'
+            r'glucose|chloroplasts|photons)\b', rl)
+        n_sci = len(sci_terms)
+
+        # ---------- 4. Simplicity markers (good when wants_simple) ----------
+        simple_markers = [
+            r'\b(think of|imagine|like a|as if|picture this)\b',
+            r'\b(for example|for instance|such as|like when)\b',
+            r'\bit\'?s like\b', r'\bjust like\b',
+            r'\b(simple|easy|basic|plain)\b',
+        ]
+        simplicity = sum(1 for p in simple_markers if re.search(p, rl))
+
+        # ---------- 5. Query-relevance via content overlap (unigram + bigram) ----------
+        q_words = set(re.findall(r"[a-zA-Z']+", ql)) - STOP
+        q_content = {w for w in q_words if len(w) > 2}
+        r_content_set = set(content)
+        if q_content:
+            uni_overlap = len(q_content & r_content_set) / max(len(q_content), 1)
+        else:
+            uni_overlap = 0.4
+
+        def bigrams(toks):
+            return set(zip(toks[:-1], toks[1:]))
+        qtoks = [w for w in re.findall(r"[a-zA-Z']+", ql) if w not in STOP]
+        rtoks = [w for w in words if w not in STOP]
+        qbg, rbg = bigrams(qtoks), bigrams(rtoks)
+        bg_overlap = len(qbg & rbg) / max(len(qbg), 1) if qbg else 0.0
+
+        relevance = min(1.0, uni_overlap * 0.7 + bg_overlap * 1.2)
+
+        # ---------- 6. Length adequacy ----------
+        if n_words < 15:
+            length_score = 0.25
+        elif n_words < 35:
+            length_score = 0.45 + (n_words - 15) * 0.015
+        elif n_words <= 250:
+            length_score = 0.9
+        elif n_words <= 400:
+            length_score = 0.85
+        else:
+            length_score = 0.7
+
+        # ---------- 7. Structure ----------
+        has_numbered = bool(re.search(r'(?:^|\n)\s*\d+[\.\)]\s', resp))
+        has_bullets = bool(re.search(r'(?:^|\n)\s*[-•*]\s', resp))
+        has_para = '\n\n' in resp
+        has_colon_h = bool(re.search(r'\n[A-Z][^\n]{0,40}:\s', resp))
+        structure = 0.4 + 0.25*has_numbered + 0.15*has_bullets + 0.1*has_para + 0.1*has_colon_h
+        structure = min(1.0, structure)
+
+        # ---------- 8. Sentence-length quality ----------
+        if 9 <= avg_sl <= 24:
+            sl_score = 1.0
+        elif avg_sl < 9:
+            sl_score = max(0.35, avg_sl / 9)
+        else:
+            sl_score = max(0.3, 1.0 - (avg_sl - 24) * 0.04)
+
+        # ---------- 9. Filler / vagueness ----------
+        filler_re = re.compile(
+            r'\b(basically|literally|honestly|just|kinda|sort of|kind of|stuff|things|'
+            r'and stuff|or something|whatever|i guess|i think|you know|i mean|'
+            r'pretty much|more or less)\b', re.IGNORECASE)
+        filler_count = len(filler_re.findall(resp))
+        filler_pen = min(0.4, filler_count * 0.04)
+
+        # ---------- 10. Non-answer / unhelpful patterns ----------
+        nonanswer_pat = [
+            r"\bdon'?t have (the |any |specific )?(information|recommendations?|details)\b",
+            r"\bi don'?t know\b",
+            r"\bcan'?t (provide|help|give|tell)\b",
+            r"\byou'?ll figure (it|this) out\b",
+            r"\bgood luck\b\s*$",
+            r"\bkeep (trying|working)\b",
+            r"\byou'?ll get there\b",
+            r"\bjust remember\b",
+        ]
+        nonanswer = sum(1 for p in nonanswer_pat if re.search(p, rl))
+
+        # ---------- 11. Compute composite ----------
+        score = 0.0
+        score += relevance * 2.2
+        score += length_score * 1.0
+        score += structure * 0.9
+        score += sl_score * 0.8
+        score -= filler_pen * 1.5
+
+        # information density
+        content_ratio = n_content / max(n_words, 1)
+        score += min(1.0, content_ratio * 2.2) * 0.7
+
+        # AUDIENCE GATE - the key denoising mechanism
+        if wants_simple:
+            # Penalize jargon heavily; reward simplicity
+            score -= min(2.5, jargon_density * 6.0 + n_sci * 0.35)
+            score += min(1.5, simplicity * 0.35)
+            # short sentences are GOOD here
+            if avg_sl < 16:
+                score += 0.4
+            # explicit analogy reward
+            if re.search(r'\b(imagine|think of|like a|picture|just like)\b', rl):
+                score += 0.4
+        elif wants_expert:
+            # Reward technical vocabulary, penalize over-simplification
+            score += min(1.2, jargon_density * 4.0 + n_sci * 0.2)
+            # but penalize childish analogies in expert contexts
+            if re.search(r"\b(like a kitchen|like a game|like a friend|imagine)\b", rl) and n_words < 80:
+                score -= 0.4
+        else:
+            # neutral - mild reward for specificity
+            score += min(0.7, jargon_density * 2.0 + n_sci * 0.1)
+
+        # Non-answer penalty
+        score -= nonanswer * 0.5
+
+        # very short response in long-query context
+        if len(ql) > 200 and n_words < 25:
+            score -= 0.6
+
+        # Empathy bonus when query is emotional
+        emo_q = bool(re.search(
+            r'\b(stress|anxious|overwhelm|frustrat|sad|lonely|heartbroken|devastated|'
+            r'cry|crying|sleepless|struggl|exhaust|upset|discouraged|disappointment|'
+            r'feeling|emotional)\b', ql))
+        if emo_q:
+            empathy = len(re.findall(
+                r"\b(i understand|i hear|i can see|i'?m sorry|it'?s okay|"
+                r"completely understandable|natural to|not alone|your feelings)\b", rl))
+            score += min(0.8, empathy * 0.3)
+            # dismissive penalty
+            dism = len(re.findall(
+                r"\b(get over it|move on|just (deal|try|keep)|"
+                r"you'?re just not|maybe you'?re just|stop (being|feeling)|"
+                r"suck it up|cut out for)\b", rl))
+            score -= dism * 0.7
+
+        # Normalize to 1-5
+        # Typical raw range: roughly -2 to 7
+        final = 3.0 + score * 0.4
+        final = max(1.0, min(5.0, final))
+        return round(final, 3)
+
+    except Exception:
+        return 3.0
+```
+
+```
+=== AGGREGATED_PROGRAM_2 ===
+[description: Empathy and conversational-tone specialist. For emotional/support queries, strongly rewards acknowledgment, validation, and constructive hedging; strongly penalizes dismissive/judgmental language. For tone-matching queries, rewards responses that demonstrate the matching tone. Fuses Programs 1, 2, 3 empathy logic with a sharper dismissive detector. Targets failures 5, 9, 15, 31, plus the high-confidence emotional support cases.]
+```
+
+```python
+def judging_function(query, response):
+    try:
+        import re, math
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        if not isinstance(query, str):
+            query = ""
+
+        resp = response.strip()
+        if len(resp) < 8:
+            return 1.5
+        ql = query.lower()
+        rl = resp.lower()
+
+        words = re.findall(r"[a-zA-Z']+", rl)
+        n_words = len(words)
+        if n_words < 3:
+            return 1.5
+
+        sentences = [s.strip() for s in re.split(r'[.!?]+', resp) if len(s.strip()) > 2]
+        n_sents = max(len(sentences), 1)
+
+        # ---------- Detect query type ----------
+        emotion_words = {'stress','stressed','anxious','anxiety','overwhelm','overwhelmed',
+                         'frustrat','frustrated','sad','lonely','loneliness','heartbroken',
+                         'devastated','crying','sleepless','struggl','exhausted','upset',
+                         'discouraged','disappointment','disappointed','feeling','emotional',
+                         'depressed','worried','angry','grief','grieving','passed','died',
+                         'breakup','heartbreak','support','encourage','encouragement','comfort'}
+
+        emotional_score_q = sum(1 for w in re.findall(r"[a-z']+", ql) if w in emotion_words)
+        is_emotional = emotional_score_q >= 1
+
+        tone_match_q = bool(re.search(
+            r'\b(adapt|match|mirror|tailor)\b.*\b(tone|style|language|register|mood)\b', ql)) or \
+                       bool(re.search(r'\b(formal|informal|casual|slang|laid[- ]back)\b', ql))
+
+        clarification_q = bool(re.search(
+            r'\b(no (prior |)information|don\'?t (have|know)|ambiguous|unclear|'
+            r'unspecified|without (any )?(details|context)|without providing)\b', ql))
+
+        # ---------- Empathy / validation markers ----------
+        empathy_pats = [
+            r"\bi (can |)(see|hear|understand|sense|imagine|know|get) (that|how|what|you|your)\b",
+            r"\bi'?m (genuinely |truly |really |so )?sorry\b",
+            r"\bsorry to hear\b",
+            r"\bthat'?s (completely |totally |absolutely |perfectly )?(understandable|valid|okay|ok|fine|normal|natural)\b",
+            r"\bit'?s (completely |totally |absolutely |perfectly )?(understandable|okay|ok|fine|natural|normal|valid)\b",
+            r"\byou'?re not alone\b",
+            r"\bnot alone in (this|feeling)\b",
+            r"\bvalid feelings?\b",
+            r"\byour feelings? (are|matter|is)\b",
+            r"\bi'?m here (for you|to listen|with you)\b",
+            r"\bcompletely natural\b", r"\btotally natural\b",
+            r"\bgive yourself (permission|time|space|grace)\b",
+            r"\bit'?s okay to (feel|cry|not|be)\b",
+            r"\btake (a moment|your time)\b",
+            r"\blet yourself\b",
+            r"\bthat sounds (really |truly |incredibly )?(hard|tough|difficult|challenging|painful)\b",
+            r"\bappreciate you (sharing|opening up)\b",
+            r"\bthank you for sharing\b",
+            r"\bwhat you'?re (going through|experiencing|feeling)\b",
+        ]
+        empathy_count = sum(1 for p in empathy_pats if re.search(p, rl))
+
+        # ---------- Dismissive / judgmental markers ----------
+        dismissive_pats = [
+            r"\bjust\s+(get over|move on|deal with|forget|stop|ignore|do|try|keep|remember)\b",
+            r"\byou'?re just not (cut out|good)\b",
+            r"\bmaybe you'?re just\b",
+            r"\bstop (being|feeling|complaining|worrying)\b",
+            r"\bget yourself together\b",
+            r"\bsuck it up\b",
+            r"\bcut out for\b",
+            r"\bnot a big deal\b", r"\bno big deal\b",
+            r"\bthat'?s a bummer\b",
+            r"\byou should be able to\b",
+            r"\bbe grateful\b",
+            r"\bothers have it (worse|harder)\b",
+            r"\beveryone (has|goes through|deals with)\b.*\b(struggles?|problems?|stress)\b",
+            r"\bwe all have\b",
+            r"\blower your expectations\b",
+            r"\bnot cut out\b",
+            r"\bpush through\b",
+            r"\baccept your limitations\b",
+        ]
+        dismissive_count = sum(1 for p in dismissive_pats if re.search(p, rl))
+
+        # ---------- Constructive advice signals ----------
+        constructive = [
+            r"\b(try|consider|might|could|may want to|one (way|approach)|here are some|"
+            r"some (ways|things|strategies|ideas)|break (it|things) down|prioritize|"
+            r"reach out|talk to|seek (help|support|professional))\b",
+            r"\b(deep (breath|breathing)|relaxation|mindfulness|meditation|exercise|"
+            r"journal|write|sleep|rest|self[- ]care)\b",
+        ]
+        constructive_count = sum(len(re.findall(p, rl)) for p in constructive)
+
+        # ---------- Question back to user (engagement) ----------
+        questions = resp.count('?')
+
+        # ---------- Tone-match detection ----------
+        casual_markers = len(re.findall(
+            r"\b(hey|yo|mate|gonna|wanna|gotta|ain'?t|killer|whip up|cool|"
+            r"awesome|alright|ya|y'?all|chill)\b", rl))
+        formal_markers = len(re.findall(
+            r"\b(cordially|esteemed|elucidation|reminiscent|herein|whereby|"
+            r"furthermore|moreover|consequently|aforementioned|pursuant)\b", rl))
+
+        query_casual = bool(re.search(
+            r"\b(casual|laid[- ]back|slang|informal|chill|hey|yo)\b", ql))
+        query_formal = bool(re.search(
+            r"\b(formal|professional|academic|scholarly|cordial)\b", ql))
+
+        # ---------- Clarification-asking detection ----------
+        asks_for_clarification = bool(re.search(
+            r"\b(could you (provide|share|tell|specify|elaborate|clarify)|"
+            r"can you (tell|share|give|describe)|"
+            r"what (kind|type|specific)|"
+            r"more (details|information|context)|"
+            r"can you (provide|give))\b", rl))
+
+        # ---------- Off-topic detection: response doesn't share content words with query ----------
+        STOP = {'the','a','an','is','are','was','were','be','to','of','in','for','on',
+                'with','at','by','from','it','this','that','and','or','but','if','i',
+                'you','we','they','he','she','have','has','had','will','would','can',
+                'could','should','do','does','did','your','my','our','their','what',
+                'how','when','why','where','about'}
+        q_content = {w for w in re.findall(r"[a-z']+", ql) if w not in STOP and len(w) > 3}
+        r_content = {w for w in re.findall(r"[a-z']+", rl) if w not in STOP and len(w) > 3}
+        if q_content:
+            overlap_ratio = len(q_content & r_content) / len(q_content)
+        else:
+            overlap_ratio = 0.5
+
+        # ---------- Compose score ----------
+        score = 3.0  # midpoint base
+
+        # Universal signals
+        score += min(0.7, overlap_ratio * 1.0)
+        if 25 <= n_words <= 280:
+            score += 0.3
+        elif n_words < 15:
+            score -= 0.5
+        elif n_words > 400:
+            score -= 0.2
+
+        # Emotional query handling
+        if is_emotional:
+            score += min(1.5, empathy_count * 0.45)
+            score -= dismissive_count * 0.8
+            score += min(0.6, constructive_count * 0.08)
+            # validation without solution-only mode
+            if empathy_count == 0 and dismissive_count == 0:
+                score -= 0.3  # clinical-only response in emotional context
+            if empathy_count >= 2 and constructive_count >= 1:
+                score += 0.4  # the gold standard: validation + actionable
+        else:
+            # In non-emotional contexts, mild empathy still slightly positive
+            score += min(0.3, empathy_count * 0.1)
+            score -= min(0.3, dismissive_count * 0.15)
+
+        # Tone-match handling
+        if tone_match_q:
+            # response that demonstrates tone awareness wins
+            tone_aware = len(re.findall(
+                r"\b(adjust|adapt|match|mirror|tailor|tune|switch|modify)\b.*"
+                r"\b(tone|style|language|response|word|register)\b", rl))
+            score += min(0.6, tone_aware * 0.3)
+            # description-of-failure penalty (response describes NOT adapting)
+            fail_desc = bool(re.search(
+                r"\b(does not|did not|doesn'?t|didn'?t|fails? to|cannot|can'?t)\b.{0,40}"
+                r"\b(adapt|match|mirror|adjust|tailor|respond)\b", rl))
+            if fail_desc:
+                score -= 0.6
+
+        if query_casual:
+            score += min(0.6, casual_markers * 0.15)
+            score -= min(0.5, formal_markers * 0.2)
+        elif query_formal:
+            score += min(0.5, formal_markers * 0.15)
+
+        # Clarification-asking
+        if clarification_q:
+            if asks_for_clarification:
+                score += 0.9
+            # Penalize obvious off-topic ramblings
+            if overlap_ratio < 0.15 and n_words > 40:
+                score -= 1.0
+
+        # Question engagement (mild bonus)
+        if 1 <= questions <= 3:
+            score += 0.15
+
+        # Generic platitude penalty (catches case 9-style responses)
+        platitudes = len(re.findall(
+            r"\b(keep working|you'?ll figure|don'?t give up|stay positive|"
+            r"believe in yourself|good luck|you got this|you can do it|"
+            r"you'?ll be fine|hope (you|things) (find|work|get) (out|better))\b", rl))
+        if platitudes >= 2 and constructive_count == 0:
+            score -= 0.5
+
+        # Sentence-level filler
+        if n_words > 0:
+            filler_rate = len(re.findall(
+                r"\b(basically|literally|honestly|just|stuff|things)\b", rl)) / n_words
+            score -= min(0.4, filler_rate * 5)
+
+        score = max(1.0, min(5.0, score))
+        return round(score, 3)
+
+    except Exception:
+        return 3.0
+```
+
+```
+=== AGGREGATED_PROGRAM_3 ===
+[description: Evidence + completeness scorer with audience inversion and constraint compliance. Inspired by Programs 6, 7, 8 (evidence density) but with denoising: (a) explicit constraint extraction from query and verification in response (allergy, dietary, dress code, audience grade) — failure case 22 type; (b) audience-aware specificity sign-flip; (c) topic-coherence check using bigram overlap and proper-noun continuity.]
+```
+
+```python
+def judging_function(query, response):
+    try:
+        import re, math
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        if not isinstance(query, str):
+            query = ""
+
+        resp = response.strip()
+        if len(resp) < 8:
+            return 1.0
+        rl = resp.lower()
+        ql = query.lower()
+
+        words = re.findall(r"[a-zA-Z']+", rl)
+        n_words = len(words)
+        if n_words < 3:
+            return 1.0
+
+        sentences = [s.strip() for s in re.split(r'[.!?]+', resp) if len(s.strip()) > 2]
+        n_sents = max(len(sentences), 1)
+
+        STOP = {'the','a','an','is','are','was','were','be','been','being','have','has',
+                'had','do','does','did','will','would','could','should','may','might',
+                'can','to','of','in','for','on','with','at','by','from','as','into',
+                'and','but','or','if','that','this','it','its','i','me','my','we','our',
+                'you','your','he','she','they','them','their','him','her','what','which',
+                'who','about','also','very','just','too','so','than','then','here','there',
+                'when','where','why','how','all','any','some','no','not','more','most',
+                'other','such','only','own','same','very'}
+
+        content = [w for w in words if w not in STOP and len(w) > 2]
+
+        # ---------- 1. Sentence-level evidence scoring ----------
+        num_re = re.compile(r'\b\d+[\d,\.]*\b')
+        measure_re = re.compile(
+            r'\b\d+\s*(%|percent|pounds?|lbs?|kg|oz|ounces?|cups?|tbsp|tsp|ml|'
+            r'liters?|hours?|minutes?|seconds?|miles?|km|feet|inches?|cm|mm|'
+            r'degrees?|years?|days?|weeks?|months?)\b', re.IGNORECASE)
+        proper_re = re.compile(r'(?<![\.!\?]\s)(?<!^)\b[A-Z][a-z]{2,}\b')
+        example_re = re.compile(r'\b(for example|for instance|such as|specifically|e\.g\.)\b', re.IGNORECASE)
+        causal_re = re.compile(
+            r'\b(because|therefore|thus|hence|since|due to|as a result|leads to|results in)\b',
+            re.IGNORECASE)
+
+        sent_scores = []
+        for s in sentences:
+            ws = s.split()
+            if len(ws) < 2:
+                continue
+            sc = 0.0
+            sc += min(2.5, len(num_re.findall(s)) * 0.6)
+            sc += min(2.0, len(measure_re.findall(s)) * 1.5)
+            sc += min(2.0, len(proper_re.findall(s)) * 0.6)
+            sc += min(1.0, len(example_re.findall(s)) * 0.8)
+            sc += min(1.0, len(causal_re.findall(s)) * 0.5)
+            # length-normalized density
+            sc = sc * 0.6 + (sc / max(len(ws), 5)) * 4
+            sent_scores.append(sc)
+
+        avg_evidence = sum(sent_scores) / len(sent_scores) if sent_scores else 0.5
+        peak_evidence = max(sent_scores) if sent_scores else 0.5
+
+        # ---------- 2. Audience inversion ----------
+        wants_simple = bool(re.search(
+            r'\b(simple|simpler|layman|beginner|novice|easy to (understand|grasp)|'
+            r'plain (english|language)|without (jargon|technical)|non[- ]?technical|'
+            r'high school|7th grade|8th grade|young (mind|student)|new to|first time|'
+            r'language barrier|foreigner|intermediate level|basic understanding|'
+            r'succinct|concise|easy|kid)', ql))
+        wants_expert = bool(re.search(
+            r'\b(academic|expert|professional|scholarly|researcher|symposium|'
+            r'comprehensive|detailed|specialized|phd|technical (terminology|jargon))', ql))
+
+        # ---------- 3. Constraint extraction & compliance ----------
+        constraint_violations = 0
+        constraint_satisfactions = 0
+
+        # Allergy / dietary
+        allergy_match = re.search(r'\b(allergy|allergic|intolerance|gluten[- ]?free|'
+                                  r'wheat|dairy|nut|vegan|vegetarian|kosher|halal)\b', ql)
+        if allergy_match:
+            allergen = allergy_match.group(1).lower()
+            if allergen in rl or 'free' in rl or 'alternative' in rl or 'substitute' in rl:
+                constraint_satisfactions += 1
+            else:
+                # Check if response contains the forbidden ingredient blatantly
+                if allergen in ('wheat',) and re.search(r'\b(all[- ]purpose flour|wheat flour|regular flour)\b', rl):
+                    constraint_violations += 1
+
+        # Time/specific details requested
+        time_req = re.search(r'\b(time|hour|when|schedule)\b', ql)
+        if time_req:
+            if re.search(r'\b\d{1,2}\s*(am|pm|:\d{2}|o\'?clock)\b', rl) or \
+               re.search(r'\b(at \d|by \d|on \w+day)\b', rl):
+                constraint_satisfactions += 1
+
+        # Location/place requested
+        loc_req = re.search(r'\b(where|location|venue|address|place)\b', ql)
+        if loc_req:
+            if re.search(r'\b(at|on|in)\b.{1,30}\b(street|avenue|road|house|hall|building|center|venue)\b', rl) or \
+               re.search(r'\b\d+\s*[A-Z][a-z]+\b', resp):
+                constraint_satisfactions += 1
+
+        # Topic specificity (e.g., "chocolate cake") - check key noun present
+        spec_nouns = re.findall(r"\b(chocolate|vanilla|wheat|gluten|formal|casual|"
+                                r"superposition|qubit|relativity|gravity|"
+                                r"neural network|random forest|photosynthesis)\b", ql)
+        for n in spec_nouns:
+            if n.lower() in rl:
+                constraint_satisfactions += 1
+
+        # ---------- 4. Topic relevance ----------
+        q_content = {w for w in re.findall(r"[a-z']+", ql) if w not in STOP and len(w) > 3}
+        r_content = set(content)
+        if q_content:
+            uni_ov = len(q_content & r_content) / len(q_content)
+        else:
+            uni_ov = 0.4
+
+        # ---------- 5. Length / completeness ----------
+        if n_words < 20:
+            length_factor = 0.4
+        elif n_words < 50:
+            length_factor = 0.65
+        elif n_words <= 350:
+            length_factor = 1.0
+        elif n_words <= 500:
+            length_factor = 0.9
+        else:
+            length_factor = 0.75
+
+        # ---------- 6. Structure ----------
+        numbered = len(re.findall(r'(?:^|\n)\s*\d+[\.\)]\s', resp))
+        bullets = len(re.findall(r'(?:^|\n)\s*[-•*]\s', resp))
+        paras = resp.count('\n\n')
+        structure_bonus = min(1.2, numbered * 0.15 + bullets * 0.1 + paras * 0.1)
+
+        # ---------- 7. Non-answer / off-topic penalty ----------
+        nonanswer = 0
+        if re.search(r"\bdon'?t have (the |any |specific )?(info|information|recommendations?|details|data)\b", rl):
+            nonanswer += 1
+        if re.search(r"\bi don'?t know\b|\bcan'?t (help|tell|provide)\b", rl):
+            nonanswer += 1
+        if re.search(r"\byou'?ll figure it out\b|\bjust (keep|try) working\b", rl):
+            nonanswer += 1
+
+        # Off-topic rambling
+        off_topic = (uni_ov < 0.1 and n_words > 60)
+
+        # ---------- 8. Compose ----------
+        score = 0.0
+
+        # Evidence (audience-conditional sign)
+        if wants_simple:
+            # In simple mode, raw evidence is mostly orthogonal; we penalize jargon explicitly
+            score += avg_evidence * 0.3  # modest reward
+            # explicit jargon penalty
+            jargon = len(re.findall(
+                r'\b\w{10,}\b', resp))
+            sci_terms = len(re.findall(
+                r'\b(biochemical|autotrophic|chlorophyll|chloroplast|photolysis|'
+                r'redox|quantum|qubit|cuneiform|inertia|momentum|VO2|anaerobic|'
+                r'asymptotic|elucidation|reminiscent|decennium)\b', rl))
+            score -= min(1.5, jargon * 0.02 + sci_terms * 0.4)
+            # reward analogies / simple framings
+            analogies = len(re.findall(
+                r'\b(imagine|think of|like a|picture|just like|as if|it\'?s like)\b', rl))
+            score += min(0.8, analogies * 0.25)
+        elif wants_expert:
+            score += avg_evidence * 1.0
+            score += peak_evidence * 0.3
+            # penalize childish framings
+            if re.search(r"\b(like a kitchen|like a game|just like a friend)\b", rl):
+                score -= 0.5
+        else:
+            score += avg_evidence * 0.7
+            score += peak_evidence * 0.2
+
+        # Universal
+        score += uni_ov * 1.4
+        score += length_factor * 0.9
+        score += structure_bonus * 0.6
+        score += constraint_satisfactions * 0.5
+        score -= constraint_violations * 1.2
+        score -= nonanswer * 0.7
+        if off_topic:
+            score -= 1.2
+
+        # Hedging at start (slight neg)
+        first_sent = sentences[0].lower() if sentences else ""
+        if re.match(r'^(well|so|hmm|uh|um|okay so)\b', first_sent):
+            score -= 0.2
+
+        # Inability statements
+        inability = len(re.findall(
+            r"\b(might not|may not|probably won'?t|can'?t|cannot|won'?t be able)\b", rl))
+        score -= min(0.6, inability * 0.15)
+
+        # Map to 1-5
+        # raw ranges roughly -3 to +6
+        final = 3.0 + score * 0.42
+        final = max(1.0, min(5.0, final))
+        return round(final, 3)
+
+    except Exception:
+        return 3.0
+```
+
+```
+=== AGGREGATED_PROGRAM_4 ===
+[description: Audience-language-match DENOISING specialist. Computes a "language register" score for both the query and the response, then scores based on how well the response register matches the requested register. This directly targets the most common failure mode: pipeline preferring jargon-heavy responses for simple-language queries. Uses syllable estimation, average word length, jargon-suffix density, and analogy detection.]
+```
+
+```python
+def judging_function(query, response):
+    try:
+        import re, math
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        if not isinstance(query, str):
+            query = ""
+
+        resp = response.strip()
+        if len(resp) < 8:
+            return 2.5
+        rl = resp.lower()
+        ql = query.lower()
+
+        words = re.findall(r"[a-zA-Z']+", rl)
+        n_words = len(words)
+        if n_words < 3:
+            return 2.5
+
+        # ---------- Estimate syllables (approximate) ----------
+        def syllables(w):
+            w = w.lower()
+            if len(w) <= 3:
+                return 1
+            vowels = "aeiouy"
+            count = 0
+            prev = False
+            for c in w:
+                is_v = c in vowels
+                if is_v and not prev:
+                    count += 1
+                prev = is_v
+            if w.endswith('e') and count > 1:
+                count -= 1
+            return max(1, count)
+
+        # ---------- Response register metrics ----------
+        avg_word_len = sum(len(w) for w in words) / n_words
+        total_syl = sum(syllables(w) for w in words)
+        avg_syl = total_syl / n_words
+        long_word_ratio = sum(1 for w in words if len(w) >= 8) / n_words
+        complex_word_ratio = sum(1 for w in words if syllables(w) >= 3) / n_words
+
+        sentences = [s.strip() for s in re.split(r'[.!?]+', resp) if len(s.strip()) > 2]
+        n_sents = max(len(sentences), 1)
+        avg_sl = n_words / n_sents
+
+        # Flesch-like readability (higher = easier)
+        flesch = 206.835 - 1.015 * avg_sl - 84.6 * avg_syl
+
+        # Jargon suffix density
+        jargon_suffix_re = re.compile(
+            r'\b\w*(tion|sion|ology|ography|metry|trophic|otic|ynth|chemic|lytic|'
+            r'onomic|cyte|plasm|genesis|morphic|ological|otically|ically|istic)\b',
+            re.IGNORECASE)
+        jargon_count = len(jargon_suffix_re.findall(resp))
+        jargon_density = jargon_count / max(n_words, 1)
+
+        # Specific scientific lexicon
+        sci_lex = re.findall(
+            r'\b(biochemical|autotrophic|chlorophyll|chloroplast|photolysis|redox|'
+            r'photons?|chromodynamic|hadron|quark|gluon|cuneiform|ziggurat|inertia|'
+            r'momentum|VO2|anaerobic|aerobic|asymptotic|stochastic|paradigm|'
+            r'empirical|epistemological|hermeneutic|phenomenological|ontological|'
+            r'reminiscent|decennium|elucidation|cordially|esteemed|aforementioned|'
+            r'glucose|chloroplasts|protocol|algorithm|inelastic|electromagnetic)\b',
+            rl)
+        sci_count = len(sci_lex)
+
+        # Simple/concrete framing markers
+        simple_markers_re = re.compile(
+            r'\b(imagine|think of|picture|like a|just like|as if|it\'?s like|'
+            r'pretend|consider this|for example|let\'?s say|kind of like|'
+            r'similar to)\b', re.IGNORECASE)
+        simple_markers = len(simple_markers_re.findall(resp))
+
+        # Concrete physical objects (toy, ball, pizza, kitchen, etc.)
+        concrete_re = re.compile(
+            r'\b(toy|ball|kitchen|cooking|pizza|cake|sandwich|car|book|tree|'
+            r'garden|coin|flip|pumpkin|apple|football|movie|friend|family|'
+            r'house|street|home|simple|easy|stove|sun|sunshine|water|sugar)\b',
+            re.IGNORECASE)
+        concrete_count = len(concrete_re.findall(resp))
+
+        # ---------- Query register signal ----------
+        wants_simple_score = 0
+        simple_signals = [
+            (r'\bsimple\b', 2), (r'\bsimpler\b', 2), (r'\beasy(- |to)\b', 2),
+            (r'\blayman', 3), (r'\bbeginner', 2), (r'\bnovice', 2),
+            (r'\bplain (english|language)\b', 3), (r'\bwithout (jargon|technical)', 3),
+            (r'\bnon[- ]?technical\b', 3), (r'\beasy to (understand|grasp)\b', 3),
+            (r'\bnew to\b', 2), (r'\bfirst time\b', 2), (r'\blanguage barrier\b', 3),
+            (r'\bforeigner\b', 3), (r'\bintermediate level\b', 2),
+            (r'\bbasic understanding\b', 2), (r'\b\d+th grade\b', 3),
+            (r'\bhigh school\b', 1), (r'\bkid', 2), (r'\byoung mind', 3),
+            (r'\bstruggle.{0,20}(complex|terminol|jargon|hard)', 3),
+            (r'\bcasual\b.*\b(tone|style|language|laid)\b', 2),
+            (r'\bslang\b', 2), (r'\bsuccinct\b', 1), (r'\bconcise\b', 1),
+            (r'\bclear and simple\b', 3), (r'\bsimple terms\b', 3),
+            (r'\bsimple words\b', 3), (r'\bsimple way\b', 3),
+        ]
+        for pat, w in simple_signals:
+            if re.search(pat, ql):
+                wants_simple_score += w
+
+        wants_expert_score = 0
+        expert_signals = [
+            (r'\bacademic\b', 2), (r'\bexpert audience\b', 3), (r'\bscholarly\b', 2),
+            (r'\bresearcher\b', 2), (r'\bsymposium\b', 3),
+            (r'\bcomprehensive review\b', 2), (r'\bspecialized\b', 2),
+            (r'\bphd\b', 3), (r'\btechnical (terminology|jargon)\b', 3),
+            (r'\bprofessional terminology\b', 3),
+            (r'\b(bioinformatics|nuclear physics|genomic)\b', 2),
+        ]
+        for pat, w in expert_signals:
+            if re.search(pat, ql):
+                wants_expert_score += w
+
+        # ---------- Compute match score ----------
+        # Response "simplicity" composite (higher = simpler)
+        resp_simplicity = 0.0
+        # Flesch normalized: 90+ = very easy, 30- = very hard
+        resp_simplicity += max(0, min(1, (flesch - 30) / 60))
+        # short words bonus
+        resp_simplicity += max(0, min(1, 1.0 - (avg_word_len - 4) / 4))
+        # low jargon bonus
+        resp_simplicity += max(0, min(1, 1.0 - jargon_density * 5))
+        # analogies
+        resp_simplicity += min(1.0, simple_markers * 0.25)
+        # concrete words
+        resp_simplicity += min(0.8, concrete_count * 0.1)
+        # short sentences
+        if avg_sl < 18:
+            resp_simplicity += 0.5
+        # penalize sci lex
+        resp_simplicity -= min(1.5, sci_count * 0.3)
+
+        resp_simplicity = resp_simplicity / 4.0  # normalize roughly
+
+        # Response "expertise" composite
+        resp_expertise = 0.0
+        resp_expertise += min(1.0, jargon_density * 8)
+        resp_expertise += min(1.0, sci_count * 0.3)
+        resp_expertise += min(1.0, long_word_ratio * 3)
+        resp_expertise += min(1.0, complex_word_ratio * 4)
+        if avg_sl > 18:
+            resp_expertise += 0.3
+        resp_expertise = resp_expertise / 4.0
+
+        # ---------- Score by match ----------
+        score = 3.0  # baseline neutral
+
+        if wants_simple_score >= 2:
+            # Match: high simplicity wins
+            score += (resp_simplicity * 4.0) - (resp_expertise * 3.5)
+            # Bonus for explicit beginner-friendly construction
+            if simple_markers >= 2 and sci_count <= 1:
+                score += 0.5
+            # Penalty for clear jargon dump
+            if sci_count >= 3 or jargon_density > 0.08:
+                score -= 0.8
+        elif wants_expert_score >= 2:
+            # Match: high expertise wins
+            score += (resp_expertise * 3.0) - (resp_simplicity * 0.5)
+            # Penalty for over-simplification with kid analogies
+            if simple_markers >= 3 and sci_count == 0 and n_words < 100:
+                score -= 0.6
+        else:
+            # Neutral query: prefer balanced
+            # Reward moderate complexity (Flesch 40-70)
+            if 40 <= flesch <= 75:
+                score += 0.4
+            elif flesch < 25 or flesch > 90:
+                score -= 0.2
+            # Reward content density slightly
+            score += min(0.4, jargon_density * 2.5)
+
+        # ---------- Universal quality signals (keep coverage) ----------
+        STOP = {'the','a','an','is','are','was','were','be','to','of','in','for',
+                'on','with','at','by','from','it','this','that','and','or','but',
+                'i','you','we','they','have','has','will','would','can','your','my'}
+        q_content = {w for w in re.findall(r"[a-z']+", ql) if w not in STOP and len(w) > 3}
+        r_content_set = set(words) - STOP
+        if q_content:
+            overlap = len(q_content & r_content_set) / len(q_content)
+        else:
+            overlap = 0.3
+        score += overlap * 0.7
+
+        if n_words < 15:
+            score -= 0.5
+        elif n_words > 500:
+            score -= 0.2
+
+        # Non-answer penalty
+        if re.search(r"\b(don'?t have|i don'?t know|can'?t help|you'?ll figure it out)\b", rl):
+            score -= 0.6
+        # Generic platitudes
+        plat = len(re.findall(
+            r"\b(keep working|good luck|you got this|believe in yourself|"
+            r"don'?t worry|stay positive)\b", rl))
+        if plat >= 2:
+            score -= 0.3
+
+        # Dismissive
+        dism = len(re.findall(
+            r"\b(just (get over|move on|deal)|you'?re just not|maybe you'?re just|"
+            r"suck it up|cut out for|lower your expectations)\b", rl))
+        score -= dism * 0.6
+
+        # ---------- Clamp ----------
+        score = max(1.0, min(5.0, score))
+        return round(score, 3)
+
+    except Exception:
+        return 3.0
+```
+
+```
+=== AGGREGATED_PROGRAM_5 ===
+[description: Direct-answer / scenario-coherence denoising specialist. Detects two failure modes: (a) responses that describe a NEGATIVE scenario (what NOT to do) being confused with quality answers — failure cases 13, 14, 15, 18, 31; (b) off-topic ramblings that look fluent but don't address the query — failure cases 6, 24. Also detects "asks-for-clarification" pattern that should win on ambiguous queries.]
+```
+
+```python
+def judging_function(query, response):
+    try:
+        import re, math
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        if not isinstance(query, str):
+            query = ""
+
+        resp = response.strip()
+        if len(resp) < 8:
+            return 2.0
+        rl = resp.lower()
+        ql = query.lower()
+
+        words = re.findall(r"[a-zA-Z']+", rl)
+        n_words = len(words)
+        if n_words < 3:
+            return 2.0
+
+        sentences = [s.strip() for s in re.split(r'[.!?]+', resp) if len(s.strip()) > 2]
+        n_sents = max(len(sentences), 1)
+
+        STOP = {'the','a','an','is','are','was','were','be','to','of','in','for','on',
+                'with','at','by','from','it','this','that','and','or','but','if','i',
+                'you','we','they','have','has','will','would','can','could','should',
+                'do','does','did','your','my','our','their','what','how','when','why',
+                'where','about','as','also','am','being','been','him','her','them','us'}
+
+        # ---------- 1. Negative-scenario detection ----------
+        # Response describes a system/agent that FAILS at the task
+        negative_scenario_pats = [
+            r"\bdoes not (ask|inquire|consider|address|adapt|match|mirror|understand)\b",
+            r"\bdoesn'?t (ask|inquire|consider|address|adapt|match|mirror|understand|seek)\b",
+            r"\bfails? to (ask|inquire|consider|address|adapt|match|mirror|understand|recognize)\b",
+            r"\bdid not (ask|inquire|consider|address|adapt|match|mirror|seek)\b",
+            r"\bdidn'?t (ask|inquire|consider|address|adapt|match|mirror|seek)\b",
+            r"\bwithout (seeking|asking|inquiring|considering) (clarification|details|context)\b",
+            r"\blacking (empathy|understanding|consideration|adaptation)\b",
+            r"\bremain(s|ed) indifferent\b",
+            r"\bneglect(s|ing|ed) (the|to|its)\b",
+            r"\bnot adapt(ing|ed)?\b",
+            r"\bcontinues? (in the same|to use) (?:light[- ]hearted|casual|formal|informal)\b.{0,40}\bdespite\b",
+            r"\bcrack(s|ing) jokes\b.{0,30}\bserious\b",
+            r"\bdisregard(s|ed|ing)?\b",
+            r"\binstead of (asking|seeking|considering|clarifying|adapting)\b",
+            r"\bproceeds? (directly|without)\b",
+            r"\bperson(?:'s)? speech remain(?:s|ed)\b",
+        ]
+        neg_scenario_count = sum(1 for p in negative_scenario_pats if re.search(p, rl))
+
+        # Positive-scenario opposites: "did ask", "adapts", "shows empathy"
+        positive_scenario_pats = [
+            r"\b(politely|kindly) (interject|ask|inquire)",
+            r"\bask(s|ed|ing)? (for )?clarif",
+            r"\b(shows?|demonstrat\w+|exhibit\w+) empathy\b",
+            r"\b(adapt|adjust|tailor|mirror|match)(s|ed|ing)? (its|their|the) (tone|style|language|response)\b",
+            r"\backnowledg\w+ the (customer|user|speaker|person)'?s (mood|frustration|emotion|feelings?)\b",
+            r"\b(offer|provide|present)(s|ed|ing)? (a |an |)(possible|specific|relevant) (interpretation|suggestion|option)\b",
+            r"\b(empathetic|understanding) tone\b",
+            r"\bsoothe\b", r"\binterject\b", r"\bdeliberate\b",
+        ]
+        pos_scenario_count = sum(1 for p in positive_scenario_pats if re.search(p, rl))
+
+        # ---------- 2. Off-topic detection ----------
+        q_content = {w for w in re.findall(r"[a-z']+", ql) if w not in STOP and len(w) > 3}
+        r_content_set = {w for w in words if w not in STOP and len(w) > 3}
+        if q_content:
+            overlap = len(q_content & r_content_set) / len(q_content)
+        else:
+            overlap = 0.5
+
+        # Strong topic signals (proper nouns / specific terms in query)
+        q_specific_terms = re.findall(r"\b[a-z]{5,}\b", ql)
+        q_specific_terms = [w for w in q_specific_terms if w not in STOP]
+        if q_specific_terms:
+            specific_in_resp = sum(1 for w in q_specific_terms if w in rl)
+            specific_overlap = specific_in_resp / len(q_specific_terms)
+        else:
+            specific_overlap = overlap
+
+        # ---------- 3. Clarification-asking detection ----------
+        ambiguity_signals = bool(re.search(
+            r"\b(no (prior )?information|don'?t (have|know)|ambiguous|unclear|"
+            r"unspecified|without (providing|any|specific)|uncertain inquiry|"
+            r"insufficient (details|information|context))\b", ql))
+
+        asks_clarify = (bool(re.search(
+            r"\b(could you (provide|share|tell|specify|elaborate|clarify|give)|"
+            r"can you (tell|share|give|describe|specify|provide)|"
+            r"what (kind|type|specific|exact)|"
+            r"more (details|information|context|specifics)|"
+            r"could you describe|would you mind sharing|"
+            r"please (provide|share|specify|elaborate)|"
+            r"need (more|further|additional))\b", rl)) or
+            bool(re.search(r"\?", resp)) and bool(re.search(
+                r"\b(provide|share|tell|specify|clarify|describe|details)\b", rl)))
+
+        # ---------- 4. Direct-answer-with-substance ----------
+        # Response that actually addresses the question with content
+        provides_substance = (n_words >= 35 and overlap >= 0.2)
+
+        # ---------- 5. Action / concrete advice ----------
+        action_re = re.compile(
+            r'\b(try|consider|start|begin|use|apply|add|remove|check|ensure|'
+            r'first|second|third|next|then|finally|step|click|select|enter|'
+            r'pour|stir|mix|preheat|grease|combine|whisk|knead|bake)\b',
+            re.IGNORECASE)
+        actions = len(action_re.findall(resp))
+
+        # Numbered steps
+        numbered = len(re.findall(r'(?:^|\n)\s*\d+[\.\)]\s', resp))
+
+        # ---------- 6. Generic non-answer detection ----------
+        nonanswer_pats = [
+            r"\byou'?ll figure (it|this) out\b",
+            r"\bjust keep (trying|working|going|at it)\b",
+            r"\bgood luck (with )?(your|the )?\w*\s*$",
+            r"\bdon'?t (worry|give up)\b",
+            r"\byou'?ll be fine\b",
+            r"\byou got this\b",
+            r"\bbelieve in yourself\b",
+            r"\bdouble[- ]check your work\b",
+            r"\bread(?:ing)? documentation\b",
+            r"\bsearch(?:ing)? (online|for similar issues)\b",
+            r"\bdon'?t have (?:the |any |specific )?(?:information|specifics|recommendations?)\b",
+        ]
+        nonanswer = sum(1 for p in nonanswer_pats if re.search(p, rl))
+
+        # ---------- 7. Compose ----------
+        score = 3.0
+
+        # Topic adherence baseline
+        score += overlap * 1.2
+        score += min(0.6, specific_overlap * 1.0)
+
+        # Scenario polarity
+        # Only weight when the query is asking about a system/agent's behavior
+        scenario_query = bool(re.search(
+            r"\b(model|chatbot|AI|system|agent|assistant|waiter|representative|teacher)\b", ql))
+        if scenario_query:
+            # Check explicit failure framing in query
+            query_describes_problem = bool(re.search(
+                r"\b(struggl|fail|unable|difficult|trouble|challenge|issue|problem)\b", ql))
+            if pos_scenario_count > neg_scenario_count:
+                score += min(0.8, (pos_scenario_count - neg_scenario_count) * 0.3)
+            elif neg_scenario_count > pos_scenario_count and not query_describes_problem:
+                # Response is describing failure but query isn't asking for failure analysis
+                score -= min(1.0, (neg_scenario_count - pos_scenario_count) * 0.4)
+            elif neg_scenario_count >= 2:
+                # Always mild penalty for heavily negative-scenario response
+                score -= 0.4
+
+        # Clarification logic
+        if ambiguity_signals:
+            if asks_clarify:
+                score += 1.0
+            elif overlap < 0.15 and n_words > 30:
+                # off-topic ramble when clarification was needed
+                score -= 1.2
+
+        # General off-topic
+        if overlap < 0.08 and n_words > 60:
+            score -= 1.0
+
+        # Direct-answer-with-substance bonus
+        if provides_substance:
+            score += 0.4
+        if numbered >= 2:
+            score += 0.3
+        if actions >= 3:
+            score += 0.3
+
+        # Non-answer penalty
+        score -= min(1.2, nonanswer * 0.4)
+
+        # Length sanity
+        if n_words < 15:
+            score -= 0.4
+        elif n_words > 500:
+            score -= 0.1
+
+        # ---------- 8. Empathy / dismissiveness shading (emotional context) ----------
+        emo_q = bool(re.search(
+            r"\b(stress|anxious|overwhelm|frustrat|sad|lonely|heartbroken|"
+            r"crying|sleepless|struggl|exhausted|upset|discouraged|"
+            r"disappointment|feeling)\b", ql))
+        if emo_q:
+            empathy = len(re.findall(
+                r"\b(i understand|i hear|i'?m sorry|it'?s okay|completely understandable|"
+                r"natural to|not alone|your feelings|i can see|valid)\b", rl))
+            score += min(0.7, empathy * 0.3)
+            dismissive = len(re.findall(
+                r"\b(get over it|just move on|just deal|you'?re just not|"
+                r"suck it up|cut out for|lower your expectations|stop (being|feeling)|"
+                r"maybe you'?re just|be grateful|push through)\b", rl))
+            score -= dismissive * 0.7
+
+        # Audience mismatch shading (lighter than Program 4)
+        if re.search(r"\b(simple|simpler|layman|beginner|7th grade|8th grade|"
+                     r"new to|first time|language barrier|foreigner|kid)\b", ql):
+            sci = len(re.findall(
+                r"\b(biochemical|autotrophic|chlorophyll|chloroplast|photolysis|"
+                r"redox|quantum|inertia|momentum|asymptotic|reminiscent|decennium|"
+                r"elucidation|cordially|esteemed)\b", rl))
+            if sci >= 2:
+                score -= 0.5
+            # reward simple framings
+            if re.search(r"\b(imagine|think of|like a|just like|picture|as if)\b", rl):
+                score += 0.4
+
+        # Clamp
+        score = max(1.0, min(5.0, score))
+        return round(score, 3)
+
+    except Exception:
+        return 3.0
+```

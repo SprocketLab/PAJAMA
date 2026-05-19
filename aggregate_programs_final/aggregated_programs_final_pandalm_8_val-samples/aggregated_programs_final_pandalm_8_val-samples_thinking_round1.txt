@@ -1,0 +1,7 @@
+ I'm identifying the key failure patterns in the pipeline results, particularly how length bias skews the outputs toward longer responses even when brevity would be more appropriate. I need to design eight aggregated programs that combine the strongest heuristics while filtering out these misleading signals.
+
+Beyond length, I'm noticing that repetition penalties aren't calibrated correctly—sometimes a response with redundant elements is still better because it stays on-topic, while other times off-topic but structurally sound answers get undue credit. There's also a tension between vague-but-accurate and specific-but-wrong answers that needs careful handling.
+
+For the evaluation framework, I should build multiple specialized scorers: one that catches tautological self-reference and heavy repetition, another focused purely on semantic alignment with the query, a third that recognizes when conciseness matters more than elaboration, and a few more to handle format adherence and factual accuracy. The key is combining these signals intelligently rather than relying on any single metric.
+
+The real problem I'm seeing is that my current approach keeps favoring longer, more elaborate responses when the ground truth often prefers focused, direct answers—especially for straightforward factual questions. I need to actively penalize length when it's not warranted, detect when a response is just echoing the query back, and recognize off-topic drift. Let me implement these scorers now.

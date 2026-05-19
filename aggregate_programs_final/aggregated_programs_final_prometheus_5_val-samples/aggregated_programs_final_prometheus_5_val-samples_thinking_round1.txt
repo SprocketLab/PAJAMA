@@ -1,0 +1,11 @@
+ I'm noticing a clear pattern in the failures—the pipeline is consistently choosing responses with more technical jargon when users explicitly ask for simple, accessible language. Cases like 1, 3, 4, 11, 16, 17, 29, 30, 32, 37, and 38 all show this same issue where the simpler explanation should have won but got passed over because the complex version appeared more specific.
+
+Beyond that, there are several other systematic failures: emotional support queries get clinical dismissals instead of empathy, direct clarifications lose to rambling tangents, and the pipeline sometimes picks negative examples over positive ones. It's also failing on safety-critical cases like ignoring allergies in recipes, and choosing non-adaptive responses when adaptation is clearly needed.
+
+The core insight is that audience-matching matters far more than technical density—when someone asks for beginner-friendly or jargon-free content, that should override any perceived specificity advantage. Similarly, empathetic hedging is actually better for emotional contexts, and clarifying ambiguity beats generic platitudes.
+
+I'm going to design five specialized scoring programs to address these patterns: one for broad relevance with audience-aware jargon detection, one specifically for emotional and conversational tone-matching, one for structured completeness with audience gating, one as a denoiser that catches when simple language is requested but jargon is used anyway, and one that ensures constraint compliance and direct answers. Each will be roughly 200 lines and target specific failure modes I've identified.
+
+For the jargon detection, I'm looking at technical words that are too long, Latinate suffixes like -tion and -ize, domain-specific terminology, and words with endings like -ic or -ology that are eight characters or longer. For empathy, I'll catch phrases like "I understand" and "you're not alone" that signal emotional validation. And for constraints, I need to extract the key requirements from the query—allergies, dietary restrictions, dress codes, time limits—and verify the response actually respects them.
+
+Now I'm building out Program 1, the broad scorer with audience awareness...

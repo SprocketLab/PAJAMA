@@ -1,0 +1,1372 @@
+Looking at the failure cases, I can identify several systematic error patterns:
+
+1. **Echo/question responses** (Cases 1, 2, 4, 7, 11, 17, 18, 22, 25, 27, 29, 40): Responses that just ask MORE questions instead of answering get rewarded for "structure"
+2. **Template artifact pollution** (Cases 5, 6, 13, 14, 26, 28, 30, 31, 35, 36): "Instruction:/Output:/Question:" repetition mistakenly looks like rich content
+3. **Length bias against correct concise answers** (Cases 5, 19, 26, 32, 36): Short, correct, direct answers beat long verbose wrong ones for "output directly" queries
+4. **Garbled/foreign text** (Cases 8, 13, 28, 34): Non-Latin character runs and broken patterns aren't penalized enough
+5. **First-sentence relevance**: A response whose first sentence doesn't address the query is usually bad
+
+Let me design 8 programs that preserve broad coverage while adding targeted gates against these patterns.
+
+```
+=== AGGREGATED_PROGRAM_1 ===
+[Broad relevance + substance scorer. Combines judge_1's multi-signal relevance with judge_19's completeness analysis. Adds first-sentence relevance reward and an echo-question detector to fix Cases 1, 4, 7, 11, 17, 18, 22, 25, 29, 40.]
+
+```python
+def judging_function(query, response):
+    try:
+        import re
+        import math
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        if not query or not isinstance(query, str):
+            query = ""
+
+        resp = response.strip()
+        q = query.strip()
+        if len(resp) == 0:
+            return 0.0
+        if len(resp) < 3:
+            return 1.0
+
+        STOP = {'a','an','the','is','are','was','were','be','been','being','have','has','had',
+                'do','does','did','will','would','could','should','may','might','can','shall',
+                'to','of','in','for','on','with','at','by','from','as','into','through','about',
+                'and','or','but','not','no','if','then','than','so','too','very','just','also',
+                'this','that','these','those','it','its','i','me','my','we','our','you','your',
+                'he','him','his','she','her','they','them','their','what','which','who','whom',
+                'how','when','where','why','out','up','down','over','under','again','here',
+                'there','any','some','all','each','more','most','other','such','only','own','same'}
+
+        def tok(s):
+            return re.findall(r"[a-zA-Z']+", s.lower())
+
+        q_tokens = tok(q)
+        r_tokens = tok(resp)
+        if not r_tokens:
+            return 0.5
+
+        q_content = set(w for w in q_tokens if w not in STOP and len(w) > 2)
+        r_content = [w for w in r_tokens if w not in STOP and len(w) > 2]
+        r_content_set = set(r_content)
+
+        # === Signal 1: keyword coverage ===
+        if q_content:
+            coverage = len(q_content & r_content_set) / len(q_content)
+        else:
+            coverage = 0.5
+
+        # === Signal 2: bigram alignment ===
+        def bigrams(toks):
+            return set((toks[i], toks[i+1]) for i in range(len(toks)-1))
+        q_bg = bigrams(q_tokens)
+        r_bg = bigrams(r_tokens)
+        bigram_score = len(q_bg & r_bg) / max(len(q_bg), 1) if q_bg else 0.3
+
+        # === Signal 3: length adequacy ===
+        n_words = len(r_tokens)
+        q_words = len(q_tokens)
+        if n_words < 2:
+            length_score = 0.1
+        elif n_words < 6:
+            length_score = 0.4
+        elif n_words < 12:
+            length_score = 0.65
+        elif n_words <= 250:
+            length_score = 1.0
+        else:
+            length_score = 0.8
+
+        # === Signal 4: first-sentence relevance (FAILURE FIX) ===
+        sentences = [s.strip() for s in re.split(r'[.!?\n]+', resp) if len(s.strip()) > 3]
+        first_sent_score = 0.5
+        if sentences and q_content:
+            first_toks = set(tok(sentences[0]))
+            first_content = first_toks - STOP
+            if first_content:
+                first_sent_score = min(1.0, 0.3 + 0.9 * len(first_content & q_content) / max(len(q_content), 1))
+
+        # === Signal 5: echo/question detector (CRITICAL FIX) ===
+        # Responses that mostly ask questions instead of answering are bad
+        q_marks = resp.count('?')
+        period_marks = resp.count('.')
+        q_in_resp = len(re.findall(r'\?', resp))
+        statement_count = max(1, period_marks)
+        question_ratio = q_in_resp / max(q_in_resp + statement_count, 1)
+
+        echo_penalty = 0.0
+        query_is_question = '?' in q or any(w in q.lower().split()[:4] for w in ['what','who','where','when','why','how','can','is','are','do','does','will'])
+        if query_is_question and question_ratio > 0.5 and q_in_resp >= 2:
+            echo_penalty = 0.4
+        elif query_is_question and q_in_resp >= 4 and n_words < 100:
+            echo_penalty = 0.3
+
+        # Detect "I want / I am / I have" first-person prompt echo
+        first_person_echo = bool(re.match(r'^\s*(i\s+(am|want|have|need|would|think|don\'?t|can\'?t))', resp.lower()))
+        if first_person_echo and query_is_question:
+            echo_penalty = max(echo_penalty, 0.35)
+
+        # === Signal 6: template artifact penalty ===
+        template_patterns = len(re.findall(r'\b(?:Instruction|Input|Output|Question|Answer)\s*:', resp))
+        template_penalty = 0.0
+        q_lower = q.lower()
+        looks_like_qa_task = any(k in q_lower for k in ['classify','identify','translate','convert'])
+        if template_patterns > 2:
+            template_penalty = min(0.5, (template_patterns - 2) * 0.12)
+        elif template_patterns >= 2 and not looks_like_qa_task:
+            template_penalty = 0.15
+
+        # === Signal 7: repetition ===
+        unique_ratio = len(set(r_tokens)) / max(len(r_tokens), 1)
+        rep_penalty = 0.0
+        if unique_ratio < 0.3:
+            rep_penalty = 0.45
+        elif unique_ratio < 0.5:
+            rep_penalty = 0.2
+
+        if len(r_tokens) >= 6:
+            trigrams = [tuple(r_tokens[i:i+3]) for i in range(len(r_tokens)-2)]
+            tc = Counter(trigrams)
+            rep_tri = sum(c - 1 for c in tc.values() if c > 1)
+            if rep_tri > 4:
+                rep_penalty += min(0.25, rep_tri * 0.03)
+
+        # === Signal 8: garbled text detection (FAILURE FIX) ===
+        alpha = sum(1 for c in resp if c.isalpha() and ord(c) < 128)
+        nonlatin = sum(1 for c in resp if c.isalpha() and ord(c) >= 128)
+        total_alpha = alpha + nonlatin
+        nonlatin_ratio = nonlatin / max(total_alpha, 1)
+        garbled_penalty = 0.0
+        # Heavy non-Latin when query is English: bad
+        if nonlatin_ratio > 0.15 and not re.search(r'[\u3040-\u30ff\u4e00-\u9fff\u0590-\u05ff\u0600-\u06ff]', q):
+            garbled_penalty = min(0.4, nonlatin_ratio * 0.8)
+
+        # Detect repeated parenthetical garble like "骨髓内 (内在骨髓内)"
+        weird_parens = len(re.findall(r'\([^)]{1,20}\)\s*\([^)]{1,20}\)', resp))
+        if weird_parens >= 2:
+            garbled_penalty += 0.2
+
+        # === Signal 9: code/HTML when not asked ===
+        asks_code = any(w in q_lower for w in ['code','python','program','function','script','html','tag','debug'])
+        noise_penalty = 0.0
+        if not asks_code:
+            code_hits = len(re.findall(r'(?:import |def |class |#include|public class|<[a-z]+>|return\s+\w+;)', resp))
+            if code_hits > 2:
+                noise_penalty = min(0.35, code_hits * 0.06)
+
+        # === Combine ===
+        relevance = 0.30*coverage + 0.15*bigram_score + 0.30*first_sent_score + 0.25*min(1.0, len(r_content_set)/15.0)
+        base = 0.55 * relevance + 0.30 * length_score + 0.15 * min(1.0, len(sentences)/3.0)
+
+        total_penalty = echo_penalty + template_penalty + rep_penalty + garbled_penalty + noise_penalty
+        total_penalty = min(total_penalty, 0.75)
+
+        score = base * (1.0 - total_penalty)
+
+        # Floor for very short responses
+        if n_words <= 2 and q_words > 4:
+            score = min(score, 0.25)
+
+        final = score * 10.0
+        # Bonus for clearly substantive on-topic responses
+        if coverage > 0.5 and n_words > 30 and total_penalty < 0.15:
+            final = min(10.0, final + 0.5)
+
+        return round(max(0.0, min(10.0, final)), 2)
+    except Exception:
+        try:
+            return 4.0 if response and len(response.strip()) > 20 else 2.0
+        except:
+            return 3.0
+```
+
+=== AGGREGATED_PROGRAM_2 ===
+[Direct-answer / brevity scorer. Targets failures where short correct answers (Cases 5, 19, 26, 32, 36) were beaten by long, off-topic continuations. Recognizes "output directly", "identify", "name", "which" queries.]
+
+```python
+def judging_function(query, response):
+    try:
+        import re
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        if not query or not isinstance(query, str):
+            query = ""
+
+        resp = response.strip()
+        q = query.strip()
+        if not resp:
+            return 0.0
+
+        q_lower = q.lower()
+        r_lower = resp.lower()
+        n_chars = len(resp)
+        words = resp.split()
+        n_words = len(words)
+        if n_words == 0:
+            return 0.5
+
+        # === Detect "brief answer" intent in query ===
+        brief_signals = [
+            'output the', 'output directly', 'identify the', 'identify a',
+            'name a', 'name the', 'which is', 'which of', 'classify',
+            'compute', 'calculate', 'find the', 'list the', 'tell me which',
+            'biggest', 'smallest', 'largest', 'shortest', 'longest',
+            'what is the', 'who is the', 'when did', 'what year'
+        ]
+        is_brief_intent = any(s in q_lower for s in brief_signals)
+        # Short queries that look like simple questions
+        if not is_brief_intent and len(q.split()) < 15 and re.search(r'^\s*(who|what|which|when|where|name)\b', q_lower):
+            is_brief_intent = True
+
+        # === Detect off-topic continuation (the main bug) ===
+        # Template repetition is a strong negative signal
+        template_hits = len(re.findall(r'\b(?:Instruction|Input|Output|Question|Answer|Comment|Explanation)\s*:', resp))
+        template_penalty = 0.0
+        if template_hits >= 3:
+            template_penalty = min(4.0, (template_hits - 1) * 0.7)
+        elif template_hits == 2 and n_words < 80:
+            template_penalty = 0.8
+
+        # "Multiple choice option" listing (like A) ... B) ... C) ...)
+        mc_options = len(re.findall(r'\b[A-D]\)\s+', resp))
+        if mc_options >= 3 and not re.search(r'\b(option|choice|multiple)\b', q_lower):
+            template_penalty += min(2.0, mc_options * 0.4)
+
+        # === Detect random off-topic ramble in second half ===
+        first_half = resp[:len(resp)//2].lower()
+        second_half = resp[len(resp)//2:].lower()
+        # Query content words
+        STOP = {'a','an','the','is','are','was','were','be','to','of','in','for','on','with',
+                'at','by','from','as','and','or','but','not','it','this','that','what','which',
+                'how','when','where','why','who','do','does','have','has','i','you'}
+        q_content = set(w.strip(".,!?;:()") for w in q_lower.split() 
+                       if w.strip(".,!?;:()") not in STOP and len(w.strip(".,!?;:()")) > 2)
+
+        drift_penalty = 0.0
+        if q_content and n_words > 80:
+            fh_words = set(re.findall(r'[a-z]+', first_half)) & q_content
+            sh_words = set(re.findall(r'[a-z]+', second_half)) & q_content
+            # Second half is unrelated to query
+            if len(fh_words) >= 2 and len(sh_words) == 0:
+                drift_penalty = 2.0
+            elif len(fh_words) > len(sh_words) + 2:
+                drift_penalty = 1.0
+
+        # === Direct answer detection ===
+        # Strong signal: short response that mentions a query content word
+        is_direct_short = False
+        if is_brief_intent and n_words <= 15:
+            words_lower = set(re.findall(r"[a-z']+", r_lower))
+            if q_content and (words_lower & q_content) or re.search(r'\b\d+', resp):
+                is_direct_short = True
+            # Or just looks like a clean name/answer
+            if re.match(r'^[A-Za-z][\w\s\-.,]{0,80}\.?$', resp.strip()) and n_words >= 1:
+                is_direct_short = True
+
+        # === Base scoring ===
+        score = 5.0  # neutral base
+
+        # Length appropriateness
+        if is_brief_intent:
+            if n_words <= 8:
+                score += 2.0  # direct, brief answer
+            elif n_words <= 25:
+                score += 1.0
+            elif n_words <= 60:
+                score += 0.0
+            elif n_words <= 150:
+                score -= 0.5
+            else:
+                score -= 1.5  # likely contains off-topic continuation
+        else:
+            # For open-ended queries, prefer moderate-to-long
+            if n_words < 3:
+                score -= 2.5
+            elif n_words < 10:
+                score -= 1.0
+            elif 10 <= n_words <= 250:
+                score += 1.5
+            else:
+                score += 0.5
+
+        # Apply major penalties
+        score -= template_penalty
+        score -= drift_penalty
+
+        # Bonus for clean direct answers
+        if is_direct_short and template_hits == 0:
+            score += 1.5
+
+        # Garbled text/foreign characters
+        nonlatin = sum(1 for c in resp if c.isalpha() and ord(c) >= 128)
+        if nonlatin > 5 and not re.search(r'[\u3040-\u30ff\u4e00-\u9fff\u0590-\u05ff\u0600-\u06ff]', q):
+            score -= min(3.0, nonlatin / 20.0)
+
+        # Echo/question response (FAILURE FIX)
+        q_in_r = resp.count('?')
+        period_r = resp.count('.')
+        if q_in_r >= 3 and period_r <= q_in_r:
+            score -= 1.5
+
+        # Response starts asking instead of answering
+        if re.match(r'^\s*(also,?|what|how|can|do|i\s+(am|want|have|need))', r_lower) and '?' in q:
+            score -= 1.0
+
+        # Repetition penalty
+        words_lower_list = [w.lower() for w in words]
+        if n_words >= 6:
+            tri = [tuple(words_lower_list[i:i+3]) for i in range(n_words-2)]
+            tc = Counter(tri)
+            most = tc.most_common(1)[0][1] if tc else 1
+            if most >= 4:
+                score -= min(2.5, most * 0.3)
+
+        # Empty/non-answer
+        if n_words <= 1 or r_lower.strip('. ') in ('no','n/a','na','none','no answer'):
+            if not is_brief_intent or q_content:
+                score -= 2.0
+
+        # Contains exact query echo (just repeats the question)
+        if len(q) > 20 and q_lower[:40] in r_lower and n_words < len(q.split()) * 1.5:
+            score -= 1.5
+
+        # Excessive code when not asked
+        asks_code = any(w in q_lower for w in ['code','python','program','function','script','html','debug'])
+        code_lines = len(re.findall(r'(?:import |def |class |#include|<[a-z]+>|public class)', resp))
+        if not asks_code and code_lines > 2:
+            score -= min(2.5, code_lines * 0.3)
+
+        # Truncation
+        if resp.rstrip()[-1] not in '.!?")\']}:' and n_words > 30:
+            score -= 0.3
+
+        return round(max(0.0, min(10.0, score)), 2)
+    except Exception:
+        try:
+            return 4.5 if response and len(response.strip()) > 15 else 2.0
+        except:
+            return 3.0
+```
+
+=== AGGREGATED_PROGRAM_3 ===
+[Structural quality with strong artifact gating. Inspired by judge_66, judge_46. Rewards genuine structure but heavily penalizes template/Q&A pseudo-structure that fooled the original pipeline (Cases 2, 17, 27, 28, 30).]
+
+```python
+def judging_function(query, response):
+    try:
+        import re
+        import math
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        q = query.strip() if isinstance(query, str) else ""
+        resp = response.strip()
+        if not resp:
+            return 0.0
+
+        words = resp.split()
+        n_words = len(words)
+        if n_words <= 1:
+            return 0.5
+
+        # ===== Genuine structural indicators =====
+        # Bullets, real numbered lists (not just "1. " followed by garbage)
+        bullets = len(re.findall(r'(?:^|\n)\s*[-*•]\s+\S', resp))
+        numbered = len(re.findall(r'(?:^|\n)\s*\d+[.)]\s+[A-Z]', resp))
+        kv = len(re.findall(r'(?:^|\n)\s*[A-Z][^:\n]{1,40}:\s+\S', resp))
+        paragraphs = len([p for p in resp.split('\n\n') if len(p.strip()) > 20])
+
+        good_structure = bullets + numbered + kv
+
+        # ===== Bad pseudo-structure (the main failure pattern) =====
+        # Template repetition
+        template_repeat = len(re.findall(r'(?:Instruction|Input|Output|Question|Answer)\s*:', resp))
+
+        # Bare question lists (like Case 2, 18, 29)
+        sentences = [s.strip() for s in re.split(r'[.!?\n]+', resp) if len(s.strip()) > 5]
+        n_sentences = len(sentences)
+        question_sentences = sum(1 for s in sentences if s.endswith('?') or '?' in s[-3:])
+        question_ratio = question_sentences / max(n_sentences, 1)
+
+        # Repeated section headers (Case 2: "I.", "II.", "III." with bare questions)
+        roman_headers = len(re.findall(r'(?:^|\n)\s*[IVX]+\.\s+[A-Z]', resp))
+
+        # ===== Punctuation and capitalization quality =====
+        punct_density = sum(1 for c in resp if c in '.,;:!?') / max(n_words, 1)
+        if 0.04 <= punct_density <= 0.3:
+            punct_score = 1.0
+        elif punct_density < 0.04:
+            punct_score = max(0.3, punct_density / 0.04)
+        else:
+            punct_score = max(0.4, 1 - (punct_density - 0.3))
+
+        # First-letter capitalization
+        cap_starts = sum(1 for s in sentences[:10] if s and s[0].isupper())
+        cap_score = cap_starts / max(min(len(sentences), 10), 1)
+
+        # ===== Repetition =====
+        words_lower = [w.lower() for w in words]
+        unique_ratio = len(set(words_lower)) / max(n_words, 1)
+
+        rep_penalty = 0.0
+        if n_words >= 6:
+            tri = [tuple(words_lower[i:i+3]) for i in range(n_words-2)]
+            tc = Counter(tri)
+            rep_tri = sum(c - 1 for c in tc.values() if c > 1)
+            rep_penalty = min(3.0, rep_tri / max(len(tri), 1) * 12)
+
+        # Sentence-level duplicates
+        sent_norm = [re.sub(r'\s+', ' ', s.lower()) for s in sentences if len(s) > 10]
+        if sent_norm:
+            sc = Counter(sent_norm)
+            dup_sent = sum(c - 1 for c in sc.values() if c > 1)
+            rep_penalty += min(2.0, dup_sent * 0.8)
+
+        # ===== Coherence: sentence-to-sentence overlap =====
+        STOP = {'the','a','an','is','are','was','were','be','to','of','in','for','on','with',
+                'at','by','from','as','and','or','but','not','it','this','that','these','those',
+                'i','you','he','she','they','we','have','has','had','do','does','can','will'}
+
+        coherence = 0.5
+        if n_sentences >= 2:
+            sent_words_sets = []
+            for s in sentences:
+                sw = set(re.findall(r"[a-z]+", s.lower())) - STOP
+                sent_words_sets.append(sw)
+            overlaps = []
+            for i in range(len(sent_words_sets)-1):
+                a, b = sent_words_sets[i], sent_words_sets[i+1]
+                if a and b:
+                    union = len(a | b)
+                    if union > 0:
+                        overlaps.append(len(a & b) / union)
+            if overlaps:
+                avg = sum(overlaps)/len(overlaps)
+                # Sweet spot: 0.05 - 0.3
+                if 0.05 <= avg <= 0.4:
+                    coherence = 1.0
+                elif avg < 0.05:
+                    coherence = 0.5
+                else:
+                    coherence = max(0.4, 1.0 - (avg-0.4))
+
+        # ===== Length =====
+        if n_words < 3:
+            length_score = 0.15
+        elif n_words < 8:
+            length_score = 0.4
+        elif n_words < 20:
+            length_score = 0.7
+        elif n_words <= 250:
+            length_score = 1.0
+        elif n_words <= 500:
+            length_score = 0.85
+        else:
+            length_score = 0.7
+
+        # ===== Combine =====
+        base = (
+            0.20 * length_score +
+            0.15 * punct_score +
+            0.15 * cap_score +
+            0.20 * coherence +
+            0.15 * unique_ratio +
+            0.15 * min(1.0, good_structure / 3.0)
+        )
+
+        score = base * 10.0
+
+        # ===== Major penalties for pseudo-structure =====
+        # Template repetition (Cases 6, 26, 28, 30, 31)
+        if template_repeat >= 3:
+            score -= min(4.5, template_repeat * 0.9)
+        elif template_repeat == 2:
+            score -= 1.0
+
+        # Bare question lists (Cases 2, 18, 29)
+        if question_ratio > 0.5 and n_sentences >= 3 and not q.strip().endswith('?') == False:
+            # Many questions might be appropriate if query asks for questions
+            if not any(k in q.lower() for k in ['question','ask','list of questions','generate questions']):
+                score -= min(3.0, question_ratio * 3.5)
+
+        # Roman headers with questions (outline-only, no actual content)
+        if roman_headers >= 2 and question_ratio > 0.4:
+            score -= 2.0
+
+        # Repetition penalty
+        score -= rep_penalty
+
+        # Multiple choice options when query doesn't ask for them
+        mc = len(re.findall(r'^\s*[A-D]\)\s+\S', resp, re.MULTILINE))
+        if mc >= 3 and 'choice' not in q.lower() and 'option' not in q.lower():
+            score -= min(2.5, mc * 0.5)
+
+        # Garbled foreign text
+        nonlatin = sum(1 for c in resp if c.isalpha() and ord(c) >= 128)
+        if nonlatin > 5 and not re.search(r'[\u3040-\u30ff\u4e00-\u9fff\u0590-\u05ff\u0600-\u06ff]', q):
+            score -= min(3.0, nonlatin / 15.0)
+
+        # Numeric noise (Case 6 like "0 0 -1 1 0..." patterns)
+        num_runs = re.findall(r'(?:\d+\s+){5,}', resp)
+        if num_runs and not any(k in q.lower() for k in ['number','sequence','count','math','sum','add','multiply']):
+            score -= 1.5
+
+        # Bonus for clean structured response with content
+        if good_structure >= 2 and template_repeat <= 1 and question_ratio < 0.3 and rep_penalty < 0.5:
+            score += 0.8
+
+        return round(max(0.0, min(10.0, score)), 2)
+    except Exception:
+        try:
+            return 4.0 if response and len(response.strip()) > 20 else 1.5
+        except:
+            return 3.0
+```
+
+=== AGGREGATED_PROGRAM_4 ===
+[Readability + factual indicators combo. Combines judge_10/judge_11/judge_16 readability with judge_26 factual signals. Adds gates against pseudo-fact-density from template patterns.]
+
+```python
+def judging_function(query, response):
+    try:
+        import re
+        import math
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        q = query.strip() if isinstance(query, str) else ""
+        resp = response.strip()
+        if not resp:
+            return 0.0
+        if len(resp) < 3:
+            return 0.8
+
+        text = resp
+        words = re.findall(r"[a-zA-Z']+", text)
+        if not words:
+            return 0.5
+        n_words = len(words)
+        sentences = [s.strip() for s in re.split(r'[.!?]+', text) if len(s.strip()) > 2]
+        n_sent = max(1, len(sentences))
+
+        # ===== Readability =====
+        def syl(w):
+            w = w.lower()
+            if len(w) <= 2: return 1
+            v = 'aeiouy'; c = 0; pv = False
+            for ch in w:
+                iv = ch in v
+                if iv and not pv: c += 1
+                pv = iv
+            if w.endswith('e') and c > 1: c -= 1
+            return max(c, 1)
+        complex_w = sum(1 for w in words if syl(w) >= 3)
+        asl = n_words / n_sent
+        fog = 0.4 * (asl + 100 * complex_w / n_words)
+        if 6 <= fog <= 14:
+            fog_score = 1.0
+        elif fog < 6:
+            fog_score = max(0.3, fog / 6)
+        else:
+            fog_score = max(0.3, 1 - (fog - 14) * 0.05)
+
+        # ===== Vocabulary richness =====
+        words_lower = [w.lower() for w in words]
+        wf = Counter(words_lower)
+        hapax = sum(1 for c in wf.values() if c == 1)
+        ttr = len(wf) / n_words
+        vocab_score = 0.5 * min(ttr / 0.6, 1.0) + 0.5 * min(hapax / max(len(wf), 1) / 0.6, 1.0)
+
+        # ===== Sentence variety =====
+        if n_sent >= 2:
+            sl = [len(re.findall(r"[a-z']+", s.lower())) for s in sentences]
+            avg = sum(sl) / len(sl)
+            if avg > 0:
+                var = sum((x-avg)**2 for x in sl) / len(sl)
+                cv = math.sqrt(var) / avg
+                if 0.15 <= cv <= 0.8:
+                    var_score = 1.0
+                elif cv < 0.15:
+                    var_score = 0.6
+                else:
+                    var_score = max(0.4, 1 - (cv - 0.8) * 0.4)
+            else:
+                var_score = 0.5
+        else:
+            var_score = 0.5
+
+        # ===== Factual indicators =====
+        # Specific numbers/dates
+        years = len(re.findall(r'\b(?:1[789]\d{2}|20[0-2]\d)\b', text))
+        dates = len(re.findall(r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d', text))
+        numbers = len(re.findall(r'\b\d+(?:,\d{3})*(?:\.\d+)?\b', text))
+        # Capitalized multi-word entities (mid-sentence)
+        entities = len(re.findall(r'(?<=\s)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})', text))
+        common_starts = {'The','This','That','However','Also','But','And','When','Where','What','How','Why','Who','First','Second','Third','Finally','Yes','No','I'}
+        # Remove false positives
+        capwords = re.findall(r'(?<=\s)([A-Z][a-z]+)', text)
+        real_caps = [w for w in capwords if w not in common_starts]
+        fact_score = min(1.0, (years*0.2 + dates*0.3 + min(numbers, 5)*0.1 + min(len(real_caps), 8)*0.08))
+
+        # ===== Hedging (appropriate uncertainty) =====
+        hedges = ['typically','generally','usually','often','can','may','might','approximately',
+                  'about','estimated','tends to','depending on','in some cases','suggests',
+                  'indicates','widely considered','known as']
+        rl = text.lower()
+        hedge_count = sum(rl.count(h) for h in hedges)
+        hedge_score = min(1.0, hedge_count * 0.15)
+
+        # ===== Red flags =====
+        sensational = ['shocking','unbelievable','conspiracy','cover-up','they don\'t want you','wake up','sheeple','hoax']
+        sens_hits = sum(1 for s in sensational if s in rl)
+        absolute = ['always','never','everyone knows','undeniable','100%','guaranteed','no doubt']
+        abs_hits = sum(1 for a in absolute if a in rl)
+
+        # ===== Length =====
+        if n_words < 3:
+            length_score = 0.1
+        elif n_words < 10:
+            length_score = 0.4
+        elif n_words <= 250:
+            length_score = 1.0
+        elif n_words <= 500:
+            length_score = 0.85
+        else:
+            length_score = 0.7
+
+        # ===== Repetition =====
+        if n_words >= 6:
+            tri = [tuple(words_lower[i:i+3]) for i in range(n_words-2)]
+            tc = Counter(tri)
+            rep_tri = sum(c - 1 for c in tc.values() if c > 1)
+            rep_score = max(0, 1 - rep_tri / max(len(tri), 1) * 8)
+        else:
+            rep_score = 1.0
+
+        # ===== Template/echo penalty (FAILURE FIX) =====
+        template_hits = len(re.findall(r'\b(?:Instruction|Input|Output|Question|Answer)\s*:', text))
+        question_count = text.count('?')
+        period_count = text.count('.')
+
+        # ===== Relevance =====
+        STOP = {'the','a','an','is','are','was','were','be','to','of','in','for','on','with','at','by','from','as','and','or','but','not','it','this','that','i','you','he','she','they','we'}
+        q_content = set(w.lower() for w in re.findall(r"[a-zA-Z']+", q) if w.lower() not in STOP and len(w) > 2)
+        r_content = set(w.lower() for w in words if w.lower() not in STOP and len(w) > 2)
+        if q_content:
+            rel = len(q_content & r_content) / len(q_content)
+        else:
+            rel = 0.5
+
+        # ===== Combine =====
+        readability = (fog_score + vocab_score + var_score) / 3.0
+        base = (
+            0.20 * readability +
+            0.20 * length_score +
+            0.15 * fact_score +
+            0.10 * hedge_score +
+            0.20 * rel +
+            0.15 * rep_score
+        )
+
+        score = base * 10.0
+        score += min(1.5, fact_score * 1.0)
+
+        # Penalties
+        score -= sens_hits * 1.0
+        score -= abs_hits * 0.3
+
+        # Template repeat
+        if template_hits >= 3:
+            score -= min(4.0, template_hits * 0.8)
+        elif template_hits == 2:
+            score -= 0.7
+
+        # Mostly questions (no real factual content)
+        if n_sent >= 3 and question_count >= n_sent * 0.5:
+            score -= 1.5
+
+        # Code/HTML when not asked
+        asks_code = any(w in q.lower() for w in ['code','python','program','function','script','html','debug'])
+        if not asks_code:
+            code_hits = len(re.findall(r'(?:import |def |class |#include|<[a-z]+>|public class)', text))
+            score -= min(2.0, code_hits * 0.4)
+
+        # Garbled foreign chars
+        nonlatin = sum(1 for c in text if c.isalpha() and ord(c) >= 128)
+        if nonlatin > 5 and not re.search(r'[\u3040-\u30ff\u4e00-\u9fff\u0590-\u05ff\u0600-\u06ff]', q):
+            score -= min(2.5, nonlatin / 18.0)
+
+        return round(max(0.0, min(10.0, score)), 2)
+    except Exception:
+        try:
+            return 4.0 if response and len(response.strip()) > 20 else 1.5
+        except:
+            return 3.0
+```
+
+=== AGGREGATED_PROGRAM_5 ===
+[Coherence + topic alignment. Inspired by judge_33, judge_34, judge_24. Tests semantic depth and logical flow, with gate against question-cascade responses.]
+
+```python
+def judging_function(query, response):
+    try:
+        import re
+        import math
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        q = query.strip() if isinstance(query, str) else ""
+        resp = response.strip()
+        if not resp:
+            return 0.0
+
+        words = resp.split()
+        n_words = len(words)
+        if n_words == 0:
+            return 0.5
+        if n_words == 1:
+            return 1.2
+
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+|\n+', resp) if len(s.strip()) > 2]
+        n_sent = max(1, len(sentences))
+
+        STOP = {'a','an','the','is','are','was','were','be','been','have','has','had','do','does',
+                'did','will','would','could','should','can','may','might','to','of','in','for','on',
+                'with','at','by','from','as','into','through','and','or','but','not','no','it','its',
+                'this','that','these','those','i','me','my','we','you','your','he','him','his','she',
+                'her','they','them','their','what','which','who','how','when','where','why'}
+
+        def content(text):
+            return set(w for w in re.findall(r'[a-z]+', text.lower()) if w not in STOP and len(w) > 2)
+
+        q_content = content(q)
+        r_content = content(resp)
+
+        # ===== Sentence-to-sentence coherence chain =====
+        coh_scores = []
+        for i in range(1, n_sent):
+            a, b = content(sentences[i-1]), content(sentences[i])
+            if a and b:
+                u = len(a | b)
+                if u > 0:
+                    coh_scores.append(len(a & b) / u)
+        if coh_scores:
+            avg_coh = sum(coh_scores) / len(coh_scores)
+            if 0.05 <= avg_coh <= 0.4:
+                coh_chain = 1.0
+            elif avg_coh < 0.05:
+                coh_chain = 0.45
+            else:
+                coh_chain = max(0.3, 1 - (avg_coh - 0.4) * 1.5)
+        else:
+            coh_chain = 0.5
+
+        # ===== Information progression (new content per sentence) =====
+        seen = set()
+        new_ratios = []
+        for s in sentences:
+            sw = content(s)
+            if sw:
+                new = sw - seen
+                new_ratios.append(len(new) / len(sw))
+                seen.update(sw)
+        info_prog = sum(new_ratios) / max(len(new_ratios), 1) if new_ratios else 0.3
+
+        # ===== Logical connectors =====
+        rl = resp.lower()
+        connectors = ['because','therefore','thus','hence','consequently','as a result','since',
+                      'however','moreover','furthermore','additionally','also','although','while',
+                      'for example','for instance','such as','specifically','in particular',
+                      'first','second','third','finally','in addition','on the other hand']
+        conn_count = sum(rl.count(c) for c in connectors)
+        conn_score = min(1.0, conn_count / max(n_sent, 1) * 0.6)
+
+        # ===== Query alignment =====
+        if q_content and r_content:
+            align = len(q_content & r_content) / len(q_content)
+        else:
+            align = 0.4
+
+        # ===== Substance =====
+        if n_words < 3: subst = 0.1
+        elif n_words < 10: subst = 0.4
+        elif n_words < 25: subst = 0.65
+        elif n_words < 60: subst = 0.85
+        elif n_words <= 250: subst = 1.0
+        else: subst = 0.85
+
+        # ===== Question-cascade detector (CRITICAL FIX) =====
+        q_marks = resp.count('?')
+        sent_with_q = sum(1 for s in sentences if '?' in s)
+        question_dominance = sent_with_q / max(n_sent, 1)
+
+        # ===== Repetition =====
+        if n_words >= 6:
+            wl = [w.lower() for w in words]
+            tri = [tuple(wl[i:i+3]) for i in range(n_words-2)]
+            tc = Counter(tri)
+            rep_tri = sum(c - 1 for c in tc.values() if c > 1)
+            rep_pen = min(0.6, rep_tri / max(len(tri), 1) * 4)
+        else:
+            rep_pen = 0.0
+
+        # ===== Template artifact =====
+        tmpl = len(re.findall(r'\b(?:Instruction|Input|Output|Question|Answer)\s*:', resp))
+        tmpl_pen = 0.0
+        if tmpl >= 3: tmpl_pen = 0.4 + min(0.3, (tmpl-3) * 0.08)
+        elif tmpl == 2: tmpl_pen = 0.15
+
+        # ===== Combine =====
+        score = (
+            1.5 * subst +
+            1.5 * align +
+            1.3 * coh_chain +
+            1.0 * info_prog +
+            0.8 * conn_score
+        )
+        max_raw = 1.5 + 1.5 + 1.3 + 1.0 + 0.8
+        normalized = score / max_raw
+
+        # Apply penalties
+        penalty = rep_pen + tmpl_pen
+        # Question cascade is bad when query expects a fact answer
+        query_expects_answer = '?' in q or re.search(r'\b(what|who|where|when|why|how|which|is|are|do|does|can|will|tell me|explain|describe|name|identify)\b', q.lower())
+        if query_expects_answer and question_dominance > 0.4 and q_marks >= 2:
+            penalty += min(0.4, question_dominance * 0.5)
+
+        normalized = max(0, normalized - penalty)
+        score = normalized * 10.0
+
+        # First-sentence relevance bonus
+        if sentences and q_content:
+            first_content = content(sentences[0])
+            if first_content and len(first_content & q_content) >= min(2, len(q_content)):
+                score += 0.7
+
+        # Garbled foreign chars
+        nonlatin = sum(1 for c in resp if c.isalpha() and ord(c) >= 128)
+        if nonlatin > 5 and not re.search(r'[\u3040-\u30ff\u4e00-\u9fff\u0590-\u05ff\u0600-\u06ff]', q):
+            score -= min(2.5, nonlatin / 18.0)
+
+        # Off-topic code dump
+        asks_code = any(w in q.lower() for w in ['code','python','debug','program','function','script','html'])
+        if not asks_code:
+            code_hits = len(re.findall(r'(?:import |def |class |#include|public class|<[a-z]+>)', resp))
+            if code_hits > 2:
+                score -= min(2.0, code_hits * 0.3)
+
+        return round(max(0.0, min(10.0, score)), 2)
+    except Exception:
+        try:
+            return 4.0 if response and len(response.strip()) > 20 else 1.5
+        except:
+            return 3.0
+```
+
+=== AGGREGATED_PROGRAM_6 ===
+[DENOISING SPECIALIST #1: Echo-question and prompt-leak detector. Targets failures where responses ask MORE questions (Cases 1, 2, 4, 11, 18, 22, 25, 29, 40) or echo the user's first-person framing. Provides directional vote, not abstention.]
+
+```python
+def judging_function(query, response):
+    try:
+        import re
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        q = query.strip() if isinstance(query, str) else ""
+        resp = response.strip()
+        if not resp:
+            return 0.0
+
+        words = resp.split()
+        n_words = len(words)
+        if n_words == 0:
+            return 0.5
+
+        sentences = [s.strip() for s in re.split(r'[.!?\n]+', resp) if len(s.strip()) > 3]
+        n_sent = max(1, len(sentences))
+        rl = resp.lower()
+        ql = q.lower()
+
+        # ===== Baseline score: substance =====
+        base = 5.0
+        if n_words < 3:
+            base = 1.5
+        elif n_words < 10:
+            base = 3.0
+        elif n_words < 25:
+            base = 4.5
+        elif n_words <= 250:
+            base = 6.5
+        else:
+            base = 6.0
+
+        # ===== Question-cascade detection =====
+        q_marks = resp.count('?')
+        sent_with_q = sum(1 for s in sentences if '?' in s[-3:] or s.endswith('?'))
+
+        # Query is asking a question?
+        query_is_question = '?' in q or bool(re.match(r'^\s*(what|who|where|when|why|how|which|is|are|do|does|can|will|tell|explain|describe|name|identify|how do|how can)\b', ql))
+
+        # Number of question sentences relative to total
+        q_ratio = sent_with_q / max(n_sent, 1)
+
+        # === Specific failure pattern: response is mostly questions ===
+        if query_is_question:
+            if q_ratio >= 0.6 and q_marks >= 2:
+                base -= 3.0  # strong penalty
+            elif q_ratio >= 0.4 and q_marks >= 3:
+                base -= 2.0
+            elif q_marks >= 5:
+                base -= 1.5
+            elif q_marks >= 3 and n_sent <= 8:
+                base -= 1.0
+
+        # ===== First-person prompt echo =====
+        # "I want to...", "I am...", "I have..." at the start of response
+        first_sent = sentences[0].lower() if sentences else ""
+        first_person_start = bool(re.match(
+            r'^\s*(i\s+(?:am|want|have|need|would|think|believe|don\'?t|can\'?t|like|love|hate)|let me|tell me|what)\b',
+            first_sent
+        ))
+        if first_person_start and query_is_question:
+            base -= 2.0  # responding to a question with "I want..." is bad
+
+        # ===== Pattern: "Also, what is..." or "Hi, can you..." (clarifying question instead of answer) =====
+        clarifying_open = bool(re.match(
+            r'^\s*(?:also|btw|hi|hello|hey|first|wait|sorry)[,.\s]',
+            rl
+        ))
+        if clarifying_open and query_is_question and n_words < 80:
+            base -= 1.5
+
+        # ===== "Can you...?" "Could you...?" patterns =====
+        polite_q = len(re.findall(r'\b(can you|could you|will you|would you|do you have)\b', rl))
+        if polite_q >= 2 and query_is_question:
+            base -= min(1.5, polite_q * 0.5)
+
+        # ===== Reward direct answer indicators =====
+        # Declarative opening with content
+        if sentences:
+            fs = sentences[0]
+            declarative = (
+                not fs.endswith('?') and
+                fs[0].isupper() if fs else False and
+                not first_person_start
+            )
+            if declarative and n_words >= 5:
+                base += 0.7
+
+            # Reward responses that begin with topic of query
+            STOP = {'the','a','an','is','are','to','of','in','for','on','with','at','by','from'}
+            q_topic = [w for w in re.findall(r'[a-z]+', ql) if w not in STOP and len(w) > 3]
+            fs_lower = fs.lower()
+            if q_topic and any(t in fs_lower[:80] for t in q_topic[:5]):
+                base += 0.5
+
+        # ===== Detect templates =====
+        tmpl = len(re.findall(r'\b(?:Instruction|Input|Output|Question|Answer|Explanation)\s*:', resp))
+        if tmpl >= 3:
+            base -= min(3.0, tmpl * 0.6)
+        elif tmpl == 2 and n_words < 100:
+            base -= 0.7
+
+        # ===== Repetition =====
+        wl = [w.lower() for w in words]
+        if n_words >= 6:
+            tri = [tuple(wl[i:i+3]) for i in range(n_words-2)]
+            tc = Counter(tri)
+            most = tc.most_common(1)[0][1] if tc else 1
+            if most >= 5:
+                base -= min(3.0, most * 0.4)
+
+        # ===== Coverage of query keywords =====
+        STOP2 = {'a','an','the','is','are','was','were','to','of','in','for','on','with','at',
+                 'by','from','as','it','this','that','i','you','what','which','how','who','do','does','can','will'}
+        q_content = set(w.lower() for w in re.findall(r"[a-z]+", ql) if w not in STOP2 and len(w) > 2)
+        r_content = set(w.lower() for w in re.findall(r"[a-z]+", rl) if w not in STOP2 and len(w) > 2)
+        if q_content:
+            cov = len(q_content & r_content) / len(q_content)
+            base += cov * 1.5
+
+        # ===== Echo of query text =====
+        if len(q) > 20:
+            q_norm = re.sub(r'\s+', ' ', ql).strip()
+            if q_norm[:50] in rl:
+                # Response contains the query verbatim - might just be echoing
+                rest = rl.replace(q_norm[:50], '', 1).strip()
+                if len(rest.split()) < n_words * 0.4:
+                    base -= 1.5
+
+        # ===== Code/HTML when not asked =====
+        asks_code = any(w in ql for w in ['code','python','debug','program','function','script','html','tag'])
+        if not asks_code:
+            code_hits = len(re.findall(r'(?:import |def |class |#include|public class|<[a-z]+>)', resp))
+            if code_hits > 2:
+                base -= min(2.5, code_hits * 0.4)
+
+        # ===== Garbled foreign text =====
+        nonlatin = sum(1 for c in resp if c.isalpha() and ord(c) >= 128)
+        if nonlatin > 5 and not re.search(r'[\u3040-\u30ff\u4e00-\u9fff\u0590-\u05ff\u0600-\u06ff]', q):
+            base -= min(3.0, nonlatin / 15.0)
+
+        return round(max(0.0, min(10.0, base)), 2)
+    except Exception:
+        try:
+            return 4.0 if response and len(response.strip()) > 20 else 2.0
+        except:
+            return 3.0
+```
+
+=== AGGREGATED_PROGRAM_7 ===
+[DENOISING SPECIALIST #2: Template-artifact and pseudo-content detector. Targets Cases 5, 6, 13, 14, 17, 26, 28, 30, 31, 35, 36 where "Instruction:/Input:/Output:" repetition or numbered question lists fooled the original judges into seeing rich content.]
+
+```python
+def judging_function(query, response):
+    try:
+        import re
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        q = query.strip() if isinstance(query, str) else ""
+        resp = response.strip()
+        if not resp:
+            return 0.0
+
+        words = resp.split()
+        n_words = len(words)
+        if n_words == 0:
+            return 0.5
+
+        rl = resp.lower()
+        ql = q.lower()
+
+        base = 5.5
+
+        # ===== Length component =====
+        if n_words < 2:
+            base = 1.0
+        elif n_words < 6:
+            base = 3.5
+        elif n_words < 15:
+            base = 5.0
+        elif n_words <= 250:
+            base = 6.5
+        else:
+            base = 6.0
+
+        # ===== KEY DENOISING: Template repetition =====
+        # "Instruction:" or "Input:" or "Output:" repeated
+        instruction_hits = len(re.findall(r'\b[Ii]nstruction\s*:', resp))
+        input_hits = len(re.findall(r'\b[Ii]nput\s*:', resp))
+        output_hits = len(re.findall(r'\b[Oo]utput\s*:', resp))
+        question_hits = len(re.findall(r'\b[Qq]uestion\s*:', resp))
+        answer_hits = len(re.findall(r'\b[Aa]nswer\s*:', resp))
+
+        total_tmpl = instruction_hits + input_hits + output_hits + question_hits + answer_hits
+
+        # First "Output:" or "Answer:" prefix can be legit (one occurrence)
+        # But 3+ is a strong signal of fabricated continuation
+        if total_tmpl >= 4:
+            base -= min(5.0, total_tmpl * 0.8)
+        elif total_tmpl == 3:
+            base -= 2.0
+        elif total_tmpl == 2:
+            base -= 0.8
+
+        # ===== "1. ... 2. ... 3. ..." numbered list of fabricated Q&A =====
+        # If numbered items each end with "?", it's likely a fake quiz
+        num_items = re.findall(r'(?:^|\n)\s*\d+[.)]\s+([^\n]+)', resp)
+        if len(num_items) >= 3:
+            q_endings = sum(1 for it in num_items if it.strip().endswith('?'))
+            if q_endings >= len(num_items) * 0.6:
+                base -= min(3.0, q_endings * 0.6)
+
+        # ===== Multiple choice options A) B) C) D) =====
+        mc_opts = len(re.findall(r'(?:^|\n)\s*[A-FH-Z]\)\s+\S', resp))
+        if mc_opts >= 3 and 'choice' not in ql and 'option' not in ql:
+            base -= min(2.5, mc_opts * 0.5)
+
+        # ===== Excessive paragraph fragments (Case 12, 25) =====
+        # E.g., random product/news text appearing after the answer
+        # Heuristic: detect topic drift between halves
+        STOP = {'a','an','the','is','are','was','were','to','of','in','for','on','with','at',
+                'by','from','as','and','or','but','not','it','this','that','i','you','he','she','they','we'}
+        if n_words >= 60:
+            mid = len(resp) // 2
+            q_content = set(w.lower() for w in re.findall(r'[a-z]+', ql) if w not in STOP and len(w) > 3)
+            if q_content:
+                first_half_content = set(re.findall(r'[a-z]+', resp[:mid].lower())) & q_content
+                second_half_content = set(re.findall(r'[a-z]+', resp[mid:].lower())) & q_content
+                if len(first_half_content) >= 2 and len(second_half_content) == 0:
+                    base -= 2.0
+
+        # ===== Detect fabricated continuation patterns =====
+        # "9. Which is..." "8. Which is..." sequences (Case 6)
+        # "Question:10\n... Question:" type spam
+        repeated_starts = Counter()
+        sents = [s.strip() for s in re.split(r'[.!?\n]+', resp) if len(s.strip()) > 5]
+        for s in sents:
+            opener = ' '.join(s.split()[:3]).lower()
+            repeated_starts[opener] += 1
+        max_repeat = max(repeated_starts.values()) if repeated_starts else 1
+        if max_repeat >= 4:
+            base -= min(2.5, max_repeat * 0.4)
+
+        # ===== Reward concise on-topic answers =====
+        q_content = set(w.lower() for w in re.findall(r'[a-z]+', ql) if w not in STOP and len(w) > 2)
+        r_content = set(w.lower() for w in re.findall(r'[a-z]+', rl) if w not in STOP and len(w) > 2)
+
+        # Recognize "brief output" queries
+        brief_query = any(s in ql for s in [
+            'output the','output directly','identify the','identify a',
+            'name a','name the','which is','which of','classify',
+            'compute','find the','tell me which',
+            'biggest','largest','longest','shortest'
+        ])
+
+        if brief_query:
+            if n_words <= 10 and total_tmpl == 0 and max_repeat < 3:
+                base += 2.0  # Big bonus for clean direct answer
+            elif n_words <= 30 and total_tmpl <= 1:
+                base += 0.8
+            elif n_words > 100 and total_tmpl >= 1:
+                base -= 1.0  # Verbose response with template artifacts
+
+        # Coverage
+        if q_content:
+            cov = len(q_content & r_content) / len(q_content)
+            base += cov * 1.5
+
+        # ===== Repetition =====
+        wl = [w.lower() for w in words]
+        if n_words >= 6:
+            tri = [tuple(wl[i:i+3]) for i in range(n_words-2)]
+            tc = Counter(tri)
+            rep_tri = sum(c - 1 for c in tc.values() if c > 1)
+            rep_ratio = rep_tri / max(len(tri), 1)
+            if rep_ratio > 0.15:
+                base -= min(3.0, rep_ratio * 8)
+
+        # Unique word ratio for long responses
+        if n_words > 20:
+            uniq_ratio = len(set(wl)) / n_words
+            if uniq_ratio < 0.3:
+                base -= 2.0
+            elif uniq_ratio < 0.4:
+                base -= 1.0
+
+        # ===== Garbled foreign text =====
+        nonlatin = sum(1 for c in resp if c.isalpha() and ord(c) >= 128)
+        if nonlatin > 5 and not re.search(r'[\u3040-\u30ff\u4e00-\u9fff\u0590-\u05ff\u0600-\u06ff]', q):
+            base -= min(3.0, nonlatin / 15.0)
+
+        # ===== Random parenthetical garble =====
+        weird_parens = len(re.findall(r'\([^)]{1,30}\)\s*\([^)]{1,30}\)', resp))
+        if weird_parens >= 2:
+            base -= 2.0
+
+        # ===== Numeric noise (rows of 0s/1s) =====
+        if len(re.findall(r'(?:[-\d]+\s+){8,}', resp)) > 0:
+            if not any(k in ql for k in ['number','sequence','count','matrix','array','math']):
+                base -= 2.0
+
+        return round(max(0.0, min(10.0, base)), 2)
+    except Exception:
+        try:
+            return 4.0 if response and len(response.strip()) > 20 else 2.0
+        except:
+            return 3.0
+```
+
+=== AGGREGATED_PROGRAM_8 ===
+[DENOISING SPECIALIST #3: Task-completion / compliance detector. Reward responses that DO what the query asked (Case 15: third-person rewrite, Case 3: vegetarian conversion, Case 26: just compute the number). Detect non-compliance.]
+
+```python
+def judging_function(query, response):
+    try:
+        import re
+        from collections import Counter
+
+        if not response or not isinstance(response, str):
+            return 0.0
+        q = query.strip() if isinstance(query, str) else ""
+        resp = response.strip()
+        if not resp:
+            return 0.0
+
+        words = resp.split()
+        n_words = len(words)
+        if n_words == 0:
+            return 0.5
+
+        rl = resp.lower()
+        ql = q.lower()
+
+        base = 5.5
+
+        # ===== Length adequacy =====
+        if n_words < 2: base = 1.0
+        elif n_words < 6: base = 4.0
+        elif n_words < 15: base = 5.5
+        elif n_words <= 250: base = 6.5
+        else: base = 5.8
+
+        # ===== Detect task type =====
+        task_rewrite = bool(re.search(r'\b(rewrite|rephrase|reword|convert|translate|edit)\b', ql))
+        task_compute = bool(re.search(r'\b(compute|calculate|find|determine the|average of|sum of|product of)\b', ql))
+        task_identify = bool(re.search(r'\b(identify|which|name|find|list|classify|categorize|tell me)\b', ql))
+        task_explain = bool(re.search(r'\b(explain|describe|what is|what are|how does|why|how do)\b', ql))
+        task_generate = bool(re.search(r'\b(generate|create|write a|make a|compose|design)\b', ql))
+        task_debug = 'debug' in ql or ('code' in ql and 'fix' in ql)
+
+        # ===== Compliance checks =====
+
+        # Rewrite tasks: response should be a transformed version, not just original
+        if task_rewrite:
+            # Third person rewrite specifically
+            if 'third person' in ql:
+                has_third_person = bool(re.search(r'\b(he|she|it|they|him|her|his|hers|them|their)\b', rl))
+                has_second_person = bool(re.search(r'\b(you|your|yours)\b', rl[:200]))
+                if has_third_person and not has_second_person:
+                    base += 1.5
+                elif has_second_person and not has_third_person:
+                    base -= 1.5
+            if 'first person' in ql:
+                has_first = bool(re.search(r'\b(i|me|my|mine|we|us|our)\b', rl))
+                if has_first:
+                    base += 1.0
+            if 'vegetarian' in ql or 'vegan' in ql:
+                meat_words = ['beef','chicken','pork','bacon','ham','sausage','fish','salmon','tuna','lamb']
+                veg_words = ['tofu','seitan','tempeh','vegetable','veggie','plant','mushroom','bean','lentil']
+                meat_hits = sum(1 for m in meat_words if m in rl)
+                veg_hits = sum(1 for v in veg_words if v in rl)
+                if veg_hits > meat_hits:
+                    base += 1.5
+                elif meat_hits > veg_hits:
+                    base -= 1.5
+
+        # Compute tasks: should contain a number
+        if task_compute:
+            has_number = bool(re.search(r'\d+(?:\.\d+)?', resp))
+            if has_number:
+                base += 1.0
+                # Check if it's near the start (direct answer)
+                first_50 = resp[:80]
+                if re.search(r'\d', first_50):
+                    base += 0.8
+            else:
+                base -= 2.0
+            # If asked to output directly, prefer brief
+            if 'directly' in ql or 'output the result' in ql:
+                if n_words <= 15:
+                    base += 1.2
+
+        # Identify/classify: response should make a definite assignment
+        if task_identify:
+            if n_words <= 5:
+                # Check it contains content
+                if any(w.lower() not in {'i','don\'t','know','sorry','none','n/a'} for w in words):
+                    base += 0.5
+            elif n_words <= 30:
+                base += 0.5
+
+        # Debug task: should show code or analysis, not meta-questions
+        if task_debug:
+            has_code = bool(re.search(r'(?:def |class |return |import |public |private |function|var |let |const |#include|\{|\})', resp))
+            question_count = resp.count('?')
+            if has_code and question_count < 3:
+                base += 1.5
+            elif question_count > 5:
+                base -= 2.0  # asking lots of meta-questions instead of debugging
+
+        # Generate creative content
+        if task_generate:
+            # Should NOT be a list of questions
+            q_count = resp.count('?')
+            if q_count >= 4 and n_words < 150:
+                base -= 1.5
+            # Should have substantial prose
+            if n_words >= 30:
+                base += 0.5
+
+        # ===== Coverage of query keywords =====
+        STOP = {'a','an','the','is','are','was','were','to','of','in','for','on','with','at',
+                'by','from','as','and','or','but','not','it','this','that','i','you','he','she','they','we','what','how','can','do','does','will','my','me','your'}
+        q_content = set(w.lower() for w in re.findall(r"[a-z]+", ql) if w not in STOP and len(w) > 2)
+        r_content = set(w.lower() for w in re.findall(r"[a-z]+", rl) if w not in STOP and len(w) > 2)
+        if q_content:
+            cov = len(q_content & r_content) / len(q_content)
+            base += cov * 1.5
+
+        # ===== Direct factual question (no task verb) =====
+        if not (task_rewrite or task_compute or task_identify or task_explain or task_generate or task_debug):
+            if '?' in q and n_words >= 5:
+                # Should answer something
+                # Penalize if response is mostly questions
+                r_q = resp.count('?')
+                if r_q >= 3:
+                    base -= 1.5
+
+        # ===== Detect non-answers =====
+        non_answer_patterns = [
+            r"^\s*i don'?t know",
+            r"^\s*i'?m sorry",
+            r"^\s*you mean",
+            r"^\s*also,\s+what",
+            r"^\s*what (?:do|does|is) (?:you|the)",
+            r"^\s*let me know"
+        ]
+        if any(re.search(p, rl) for p in non_answer_patterns):
+            if n_words < 50:
+                base -= 1.0
+
+        # ===== Template artifacts =====
+        tmpl = len(re.findall(r'\b(?:Instruction|Input|Output|Question|Answer)\s*:', resp))
+        if tmpl >= 3:
+            base -= min(3.5, tmpl * 0.7)
+        elif tmpl == 2:
+            base -= 0.6
+
+        # ===== Repetition =====
+        wl = [w.lower() for w in words]
+        if n_words >= 6:
+            tri = [tuple(wl[i:i+3]) for i in range(n_words-2)]
+            tc = Counter(tri)
+            rep_tri = sum(c - 1 for c in tc.values() if c > 1)
+            if rep_tri > 5:
+                base -= min(2.5, rep_tri * 0.15)
+
+        # ===== Garbled foreign text =====
+        nonlatin = sum(1 for c in resp if c.isalpha() and ord(c) >= 128)
+        if nonlatin > 5 and not re.search(r'[\u3040-\u30ff\u4e00-\u9fff\u0590-\u05ff\u0600-\u06ff]', q):
+            base -= min(3.0, nonlatin / 15.0)
+
+        # ===== Code in non-code query =====
+        if not (task_debug or 'code' in ql or 'program' in ql or 'function' in ql or 'html' in ql):
+            code_hits = len(re.findall(r'(?:import |def |class |#include|public class|<[a-z]+>)', resp))
+            if code_hits > 2:
+                base -= min(2.5, code_hits * 0.4)
+
+        # ===== Unique vocabulary ratio =====
+        if n_words > 20:
+            uniq = len(set(wl)) / n_words
+            if uniq < 0.3:
+                base -= 1.8
+
+        return round(max(0.0, min(10.0, base)), 2)
+    except Exception:
+        try:
+            return 4.0 if response and len(response.strip()) > 20 else 2.0
+        except:
+            return 3.0
+```

@@ -1,0 +1,104 @@
+{
+  "val": {
+    "aggregated_judge_1": {
+      "accuracy": 0.905,
+      "threshold_from_val": 0.15,
+      "coverage": 0.484
+    },
+    "aggregated_judge_2": {
+      "accuracy": 0.9429,
+      "threshold_from_val": 0.14,
+      "coverage": 0.21
+    },
+    "aggregated_judge_3": {
+      "accuracy": 0.907,
+      "threshold_from_val": 0.12,
+      "coverage": 0.516
+    },
+    "aggregated_judge_4": {
+      "accuracy": 0.6087,
+      "threshold_from_val": 0.15,
+      "coverage": 0.368
+    },
+    "aggregated_judge_5": {
+      "accuracy": 0.8301,
+      "threshold_from_val": 0.15,
+      "coverage": 0.518
+    }
+  },
+  "test": {
+    "aggregated_judge_1": {
+      "accuracy": 0.8846,
+      "threshold_from_val": 0.15,
+      "coverage": 0.4816
+    },
+    "aggregated_judge_2": {
+      "accuracy": 0.8909,
+      "threshold_from_val": 0.14,
+      "coverage": 0.2126
+    },
+    "aggregated_judge_3": {
+      "accuracy": 0.8989,
+      "threshold_from_val": 0.12,
+      "coverage": 0.4884
+    },
+    "aggregated_judge_4": {
+      "accuracy": 0.6002,
+      "threshold_from_val": 0.15,
+      "coverage": 0.3672
+    },
+    "aggregated_judge_5": {
+      "accuracy": 0.8373,
+      "threshold_from_val": 0.15,
+      "coverage": 0.4992
+    }
+  },
+  "aggregate": {
+    "LabelModel_val": {
+      "accuracy": 0.8286,
+      "precision": 0.8263,
+      "recall": 0.8275,
+      "f1": 0.8268,
+      "coverage": 0.84,
+      "n_total": 500,
+      "n_covered": 420
+    },
+    "MajorityVote_val": {
+      "accuracy": 0.7976,
+      "precision": 0.7953,
+      "recall": 0.7975,
+      "f1": 0.796,
+      "coverage": 0.84,
+      "n_total": 500,
+      "n_covered": 420
+    },
+    "LabelModel_test": {
+      "accuracy": 0.7964,
+      "precision": 0.7971,
+      "recall": 0.7964,
+      "f1": 0.7963,
+      "coverage": 0.836,
+      "n_total": 5000,
+      "n_covered": 4180
+    },
+    "MajorityVote_test": {
+      "accuracy": 0.7844,
+      "precision": 0.7845,
+      "recall": 0.7844,
+      "f1": 0.7844,
+      "coverage": 0.836,
+      "n_total": 5000,
+      "n_covered": 4180
+    },
+    "label_matrix_diagnostics": {
+      "val_n_total": 500,
+      "val_n_covered": 420,
+      "val_coverage": 0.84,
+      "val_abstain_rate": 0.5808,
+      "test_n_total": 5000,
+      "test_n_covered": 4180,
+      "test_coverage": 0.836,
+      "test_abstain_rate": 0.5902
+    }
+  }
+}
