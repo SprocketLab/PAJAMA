@@ -17,6 +17,7 @@ Workflow:
 from __future__ import annotations
 
 import base64
+import copy
 import io
 import json
 import os
@@ -95,9 +96,19 @@ def init_state():
     ss.setdefault("program_chats", {})  # {program_id: list[{role, content}]}
     ss.setdefault("editing_program_id", None)
     ss.setdefault("abstain_band", 0.15)
+    # Editable copy of the 10 evaluation heuristics. Initialized from the
+    # hardcoded defaults in generation.HEURISTICS; users can edit name +
+    # description on the Prompt tab, and the live generator + Programs tab
+    # will read from this session-state copy instead of the module default.
+    ss.setdefault("heuristics", copy.deepcopy(G.HEURISTICS))
 
 
 init_state()
+
+
+def _heuristics() -> dict[int, dict[str, str]]:
+    """Current heuristics dict (session-state copy)."""
+    return st.session_state.heuristics
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -376,20 +387,21 @@ def render_programs_tab():
     for p in progs:
         by_heuristic.setdefault(p.heuristic_id or 0, []).append(p)
 
+    heur = _heuristics()
     heuristic_filter = st.multiselect(
         "Filter by heuristic",
         options=sorted(by_heuristic),
         default=sorted(by_heuristic),
         format_func=lambda h: (
-            f"H{h}: {G.HEURISTICS.get(h, {}).get('name', 'unknown')}"
-            if h in G.HEURISTICS
+            f"H{h}: {heur.get(h, {}).get('name', 'unknown')}"
+            if h in heur
             else f"H{h}"
         ),
     )
 
     for h_id in sorted(heuristic_filter):
         group = by_heuristic[h_id]
-        h_meta = G.HEURISTICS.get(h_id, {})
+        h_meta = heur.get(h_id, {})
         st.markdown(
             f"#### H{h_id} · {h_meta.get('name', 'unknown')}  "
             f"<span style='color:#888'>({len(group)} programs)</span>",
@@ -451,7 +463,7 @@ def _render_program_editor(program_id: int):
         return
 
     st.markdown(f"## ✏️ Editing `{p.display_name}`")
-    h_meta = G.HEURISTICS.get(p.heuristic_id or 0, {})
+    h_meta = _heuristics().get(p.heuristic_id or 0, {})
     st.caption(
         f"**Heuristic:** H{p.heuristic_id} · {h_meta.get('name', 'unknown')} · "
         f"variant {p.variant or '?'}"
@@ -571,9 +583,10 @@ def _run_full_generation():
         return
     few_shot_text = G.format_few_shot_from_rows(rows, n=min(10, len(rows)))
     progs: list[P.Program] = []
-    h_approaches: dict[int, list[str]] = {h: [] for h in G.HEURISTICS}
+    heur = _heuristics()
+    h_approaches: dict[int, list[str]] = {h: [] for h in heur}
     pid = 0
-    plan = [(h, v) for h in G.HEURISTICS for v in range(1, 9)]
+    plan = [(h, v) for h in heur for v in range(1, 9)]
     bar = st.progress(0.0, text="Generating programs…")
     for k, (h_id, variant) in enumerate(plan):
         pid += 1
@@ -585,6 +598,7 @@ def _run_full_generation():
                 prompt_template=st.session_state.prompt_template,
                 existing_approaches=h_approaches[h_id] or None,
                 api_key=st.session_state.api_key,
+                heuristics=heur,
             )
             try:
                 fn = P.compile_program(outcome.code)
@@ -598,7 +612,7 @@ def _run_full_generation():
                     filename=f"judge_{pid}.py",
                     code=outcome.code,
                     heuristic_id=h_id,
-                    heuristic_name=G.HEURISTICS[h_id]["name"],
+                    heuristic_name=heur[h_id]["name"],
                     variant=variant,
                     approach_summary=outcome.approach_summary,
                     status=status,
@@ -613,7 +627,7 @@ def _run_full_generation():
                     filename=f"judge_{pid}.py",
                     code=f"# generation failed: {e}\ndef judging_function(query, response):\n    return len(response)\n",
                     heuristic_id=h_id,
-                    heuristic_name=G.HEURISTICS[h_id]["name"],
+                    heuristic_name=heur[h_id]["name"],
                     variant=variant,
                     approach_summary="general heuristic",
                     status=f"error: {e}",
@@ -709,6 +723,62 @@ with tab_prompt:
             if st.button("✖️ Discard proposal", use_container_width=True):
                 st.session_state.pop("_pending_prompt", None)
                 st.rerun()
+
+    st.markdown("---")
+    st.markdown("### Evaluation heuristics (10 dimensions)")
+    st.caption(
+        "Each generated `judging_function` targets one of these 10 heuristics. "
+        "The current heuristic's **name** and **description** are substituted "
+        "into the template at `{heuristic_name}` and `{heuristic_description}` "
+        "during generation. Edit a heuristic here, click **💾 Save heuristics**, "
+        "then re-run **Generate 80 programs** (live mode) to use it. "
+        "Cached mock programs are unaffected until you regenerate."
+    )
+
+    heur = _heuristics()
+    edited: dict[int, dict[str, str]] = {}
+    for h_id in sorted(heur):
+        meta = heur[h_id]
+        with st.expander(
+            f"H{h_id} · {meta.get('name', 'unknown')}",
+            expanded=False,
+        ):
+            new_name = st.text_input(
+                "Name",
+                value=meta.get("name", ""),
+                key=f"heur_name_{h_id}",
+            )
+            new_desc = st.text_area(
+                "Description (what the judge program should evaluate)",
+                value=meta.get("description", ""),
+                height=140,
+                key=f"heur_desc_{h_id}",
+            )
+            edited[h_id] = {"name": new_name, "description": new_desc}
+
+    save_h, reset_h = st.columns(2)
+    with save_h:
+        if st.button("💾 Save heuristics", use_container_width=True):
+            empty = [
+                h_id
+                for h_id, m in edited.items()
+                if not m["name"].strip() or not m["description"].strip()
+            ]
+            if empty:
+                st.error(
+                    f"Heuristics missing name or description: "
+                    f"{', '.join(f'H{h}' for h in empty)}"
+                )
+            else:
+                st.session_state.heuristics = {
+                    h_id: {"name": m["name"].strip(), "description": m["description"].strip()}
+                    for h_id, m in edited.items()
+                }
+                st.success("Heuristics saved. They'll be used on the next live generation.")
+    with reset_h:
+        if st.button("↺ Reset heuristics to defaults", use_container_width=True):
+            st.session_state.heuristics = copy.deepcopy(G.HEURISTICS)
+            st.rerun()
 
 
 # ── Tab: Aggregation ────────────────────────────────────────────────────
