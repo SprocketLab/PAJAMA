@@ -1,0 +1,21 @@
+# Core pipeline
+numpy==2.2.6
+snorkel==0.9.9
+scikit-learn==1.7.2
+tqdm==4.67.3
+anthropic==0.92.0
+datasets==4.8.4
+huggingface-hub==1.11.0
+
+# Reward model training
+torch==2.11.0
+transformers==5.5.4
+peft==0.18.1
+tiktoken==0.12.0
+
+# Demo
+streamlit>=1.32
+pandas==2.3.3
+
+# LLM judge baseline
+vllm==0.19.1

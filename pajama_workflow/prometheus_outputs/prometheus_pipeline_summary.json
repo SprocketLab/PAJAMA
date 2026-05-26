@@ -1,0 +1,102 @@
+{
+  "dataset": "prometheus",
+  "method": "program_judge",
+  "best_k": 8,
+  "n_total_programs": 80,
+  "n_surviving_programs": 8,
+  "selected_program_ids": [
+    30,
+    42,
+    41,
+    80,
+    45,
+    48,
+    77,
+    75
+  ],
+  "selected_program_names": [
+    "judge_30",
+    "judge_42",
+    "judge_41",
+    "judge_80",
+    "judge_45",
+    "judge_48",
+    "judge_77",
+    "judge_75"
+  ],
+  "selected_program_col_indices": [
+    23,
+    36,
+    35,
+    78,
+    39,
+    42,
+    74,
+    72
+  ],
+  "selected_program_thresholds": [
+    0.14,
+    0.14,
+    0.14,
+    0.14,
+    0.14,
+    0.13,
+    0.14,
+    0.14
+  ],
+  "selected_program_val_accuracies": [
+    1.0,
+    0.9495412844036697,
+    0.9413793103448276,
+    0.9365079365079365,
+    0.9362416107382551,
+    0.9352941176470588,
+    0.9340369393139841,
+    0.9318181818181818
+  ],
+  "label_matrix_diagnostics": {
+    "test_conflict": 0.0974,
+    "n_test_total": 5000,
+    "n_test_covered": 4784,
+    "n_test_all_abstained": 216,
+    "test_coverage": 0.9568
+  },
+  "LabelModel_test": {
+    "n_total": 5000,
+    "n_covered": 4784,
+    "accuracy": 0.8955,
+    "precision": 0.8961,
+    "recall": 0.8954,
+    "f1": 0.8954,
+    "coverage": 0.9568
+  },
+  "MajorityVote_test": {
+    "n_total": 5000,
+    "n_covered": 4784,
+    "accuracy": 0.8967,
+    "precision": 0.8967,
+    "recall": 0.8967,
+    "f1": 0.8967,
+    "coverage": 0.9568
+  },
+  "LabelModel_val": {
+    "n_total": 500,
+    "n_covered": 486,
+    "accuracy": 0.9136,
+    "precision": 0.9124,
+    "recall": 0.9131,
+    "f1": 0.9127,
+    "coverage": 0.972
+  },
+  "throughput": {
+    "n_test": 5000,
+    "n_test_covered": 4784,
+    "n_top_k_programs": 8,
+    "top_k_program_time_sec": 126.8378,
+    "label_model_infer_time_sec": 0.0047,
+    "inference_elapsed_sec": 126.8424,
+    "samples_per_sec": 39.42,
+    "covered_samples_per_sec": 37.72,
+    "pipeline_elapsed_sec": 139.7
+  }
+}

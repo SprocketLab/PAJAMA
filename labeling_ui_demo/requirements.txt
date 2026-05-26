@@ -1,9 +1,0 @@
-streamlit>=1.32
-numpy>=1.24
-pandas>=2.0
-snorkel>=0.9.9
-scikit-learn>=1.2
-tqdm>=4.65
-anthropic>=0.40
-datasets>=2.14
-huggingface_hub>=0.23
