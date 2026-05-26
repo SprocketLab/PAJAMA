@@ -1,16 +1,15 @@
 # Codifying the Judge: Scalable Evaluation via Program Distillation
 
----
 LLM-as-a-judge is everywhere but can suffer from *high cost, significant latency, and opaque decisions*---limitations that undermine its scalability and reliability. We address these with a simple, efficient alternative: program distillation!
 
 We propose **PAJAMA**, a framework for scalable, cost-effective evaluation. Instead of calling a LLM judge for every sample, PAJAMA distills evaluation criteria into lightweight Python programs and aggregates their predictions using weak supervision to produce final verdicts.
 
----
 ## Main Results
+
+Programmatic judges enable scalable, high-throughput, low-cost, and transparent evaluation.
 
 ![Main results scatter plot](./assets/all_model_scatters.png)
 
----
 ## Quickstart
 
 **Install dependencies:**
@@ -47,13 +46,11 @@ python reward_model_distillation/reward_model_training.py \
 cd demo && streamlit run app.py
 ```
 
----
 ## Dataset
 
 Our benchmark datasets are available on Hugging Face:
 [https://huggingface.co/datasets/sprocket-lab/PAJAMA](https://huggingface.co/datasets/sprocket-lab/PAJAMA)
 
----
 ## How PAJAMA Works
 
 **1. Program Generation** — Generates 80 judge programs (10 evaluation rubrics × 8 variants each). Each program takes a query and a response, then returns a float score using only built-in Python (no ML libraries), making them fast and deterministic.
@@ -64,7 +61,6 @@ Our benchmark datasets are available on Hugging Face:
 
 **4. (Optional) Reward Model Training** — The predicted labels are used to fine-tune a Qwen2.5-3B reward model for downstream use.
 
----
 ## Project Structure
 
 ```text
@@ -75,7 +71,6 @@ llm_judges/                        # LLM-as-judge baseline (using vLLM)
 demo/                              # Streamlit UI for interactive exploration
 ```
 
----
 ## Demo
 
 The Streamlit demo supports two modes:
@@ -85,7 +80,6 @@ The Streamlit demo supports two modes:
 
 The demo lets you inspect individual judge programs, edit them, regenerate specific programs via chat, and download the final labeled dataset.
 
----
 ## Citation
 
 If you like this work and are playing these datasets, please cite the original benchmark papers and our PAJAMA!
