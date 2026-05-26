@@ -1,4 +1,0 @@
-[client]
-# Hide the top-right "Deploy" button while keeping the hamburger menu
-# (Settings, Record a screencast, About, etc.) available.
-toolbarMode = "viewer"
