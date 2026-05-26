@@ -227,7 +227,7 @@
             <div class="column has-text-centered">
               <div class="publication-links">
                 <span class="link-block">
-                  <a href="https://arxiv.org/pdf/2506.10403.pdf" target="_blank"
+                  <a href="static/pdfs/arXiv_pajama.pdf" target="_blank"
                   class="external-link button is-normal is-rounded is-dark">
                   <span class="icon">
                     <i class="fas fa-file-pdf"></i>
@@ -237,7 +237,7 @@
               </span>
 
               <span class="link-block">
-                <a href="https://github.com/SprocketLab/PAJAMA" target="_blank"
+                <a href="https://github.com/SprocketLab/PAJAMA/tree/main" target="_blank"
                 class="external-link button is-normal is-rounded is-dark">
                 <span class="icon">
                   <i class="fab fa-github"></i>
@@ -247,12 +247,11 @@
             </span>
 
             <span class="link-block">
-              <a href="https://arxiv.org/abs/2506.10403" target="_blank"
-              class="external-link button is-normal is-rounded is-dark">
+              <a class="external-link button is-normal is-rounded is-dark" style="opacity:0.5;cursor:default;" title="arXiv link coming soon">
               <span class="icon">
                 <i class="ai ai-arxiv"></i>
               </span>
-              <span>arXiv</span>
+              <span>arXiv (TBD)</span>
             </a>
           </span>
 
@@ -277,10 +276,10 @@
 <section class="hero teaser">
   <div class="container is-max-desktop">
     <div class="hero-body">
-      <img src="static/images/teaser.png" alt="PAJAMA overview: program distillation pipeline for LLM evaluation" style="width:100%; border-radius:8px;" />
+      <img src="static/images/framework.png" alt="PAJAMA overview: program distillation pipeline for LLM evaluation" style="width:100%; border-radius:8px;" />
       <h2 class="subtitle has-text-centered">
-        <strong>PAJAMA</strong> replaces expensive LLM-as-a-judge calls with lightweight Python programs distilled from evaluation criteria,
-        then aggregates their predictions via weak supervision to produce scalable, transparent, and cost-effective verdicts.
+        Given a query and two candidate responses, an LLM synthesizes a diverse pool of programmatic judges from curated rubrics;
+        reliable programs are selected, their verdicts are aggregated, and uncertain cases are routed to an LLM judge to produce the final verdict.
       </h2>
     </div>
   </div>
@@ -295,21 +294,24 @@
         <h2 class="title is-3">Abstract</h2>
         <div class="content has-text-justified">
           <p>
-            LLM-as-a-judge is everywhere but can suffer from <em>high cost, significant latency, and opaque decisions</em>—limitations
-            that undermine its scalability and reliability. We address these with a simple, efficient alternative: <strong>program distillation</strong>.
+            LLM-as-a-judge has become the standard for automated evaluation, but it suffers from <em>high cost, significant latency,
+            and opaque decisions</em>—limitations that undermine its scalability and reliability.
+            We address these with a simple, efficient alternative: <strong>program distillation</strong>.
           </p>
           <p>
-            We propose <strong>PAJAMA</strong>, a framework for scalable, cost-effective evaluation. Instead of calling an LLM judge for every
-            sample, PAJAMA distills evaluation criteria into lightweight Python programs and aggregates their predictions using
-            weak supervision to produce final verdicts. PAJAMA generates 80 judge programs (10 evaluation rubrics × 8 variants each).
-            Each program takes a query and a pair of responses, then returns a score using only built-in Python—no ML libraries—making
-            them fast, deterministic, and fully interpretable.
+            Instead of prompting an LLM at evaluation time, we distill its decision logic into a committee of Python programs
+            that score candidates directly. These programmatic judges offer transparency, are easily inspected or edited,
+            and eliminate per-sample API costs.
           </p>
           <p>
-            Program outputs are aggregated using a weak supervision label model that learns per-program accuracy weights,
-            filters low-quality programs, and produces calibrated preference predictions. The resulting labels can optionally
-            be used to fine-tune a lightweight reward model. Across benchmarks, PAJAMA achieves strong agreement with
-            human judgments at a fraction of the cost of LLM-based judges.
+            Building on this, we introduce <strong>PAJAMA</strong>, a system that synthesizes programs as judges, aggregates their
+            decisions into a joint verdict, and incorporates a fallback mechanism to selectively escalate low-confidence cases to an LLM.
+            Across five preference datasets and four model families, we show that programmatic judges can match the performance of a
+            13B-size LLM judge. When using program outputs as routing signals, PAJAMA advances the accuracy–throughput Pareto frontier:
+            built on OLMo-2-7B-Instruct, the hybrid evaluation gains +5.0% accuracy at 2.9× higher throughput;
+            on Qwen2.5-3B-Instruct, +2.6% accuracy at 2.2× higher throughput.
+            Beyond evaluation, programmatic judges produce cheap and effective reward signals: on RewardBench, a reward model
+            distilled from programs' verdicts outperforms one trained on a proprietary LLM's labels at two orders of magnitude lower API cost.
           </p>
         </div>
       </div>
@@ -319,40 +321,20 @@
 <!-- End paper abstract -->
 
 
-<!-- Image carousel -->
+<!-- Main result figure -->
 <section class="hero is-small">
   <div class="hero-body">
-    <div class="container">
-      <div id="results-carousel" class="carousel results-carousel">
-       <div class="item">
-        <img src="static/images/carousel1.jpg" alt="PAJAMA main results: cost vs. accuracy scatter plot across benchmarks" loading="lazy"/>
-        <h2 class="subtitle has-text-centered">
-          PAJAMA achieves competitive accuracy with human judges at significantly lower cost across multiple evaluation benchmarks.
-        </h2>
-      </div>
-      <div class="item">
-        <img src="static/images/carousel2.jpg" alt="Program generation: 10 rubrics x 8 variants" loading="lazy"/>
-        <h2 class="subtitle has-text-centered">
-          80 judge programs are generated from 10 evaluation rubrics, each with 8 structural variants for diversity.
-        </h2>
-      </div>
-      <div class="item">
-        <img src="static/images/carousel3.jpg" alt="Weak supervision aggregation pipeline" loading="lazy"/>
-        <h2 class="subtitle has-text-centered">
-          A weak supervision label model learns per-program accuracy weights and produces calibrated final predictions.
-        </h2>
-      </div>
-      <div class="item">
-        <img src="static/images/carousel4.jpg" alt="Reward model distillation results" loading="lazy"/>
-        <h2 class="subtitle has-text-centered">
-          Aggregated labels from PAJAMA can distill a lightweight reward model (Qwen2.5-3B) with strong downstream performance.
-        </h2>
-      </div>
+    <div class="container is-max-desktop">
+      <figure class="image">
+        <img src="static/images/effectiveness.jpg" alt="PAJAMA main results: accuracy vs. throughput across benchmarks" loading="lazy" style="border-radius:8px;" />
+      </figure>
+      <h2 class="subtitle has-text-centered" style="margin-top:1rem;">
+        Programmatic judges provide extremely high throughput with accuracy competitive with mid-sized LLM judges.
+      </h2>
     </div>
   </div>
-</div>
 </section>
-<!-- End image carousel -->
+<!-- End main result figure -->
 
 
 <!-- How it works -->
@@ -385,9 +367,8 @@
             PAJAMA ships with an interactive <strong>Evaluation Studio</strong> built in Streamlit.
             Inspect individual judge programs, edit them, regenerate via chat, and download labeled datasets.
           </p>
-          <!-- TODO: Replace with a recorded demo video or YouTube embed ID -->
-          <div class="publication-video">
-            <iframe src="https://www.youtube.com/embed/JkaxUblCGz0" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+          <div class="publication-video" style="background:#f5f5f5; border:2px dashed #ccc; border-radius:8px; display:flex; align-items:center; justify-content:center; min-height:360px;">
+            <p style="color:#999; font-size:1.2rem;"><i class="fas fa-video" style="margin-right:0.5rem;"></i>Demo video coming soon</p>
           </div>
         </div>
       </div>
@@ -400,20 +381,19 @@
 <!--BibTex citation -->
   <section class="section" id="BibTeX">
     <div class="container is-max-desktop content">
-      <div class="bibtex-header">
-        <h2 class="title">BibTeX</h2>
-        <button class="copy-bibtex-btn" onclick="copyBibTeX()" title="Copy BibTeX to clipboard">
-          <i class="fas fa-copy"></i>
-          <span class="copy-text">Copy</span>
-        </button>
-      </div>
-      <pre id="bibtex-code"><code>@article{huang2026codifying,
+      <h2 class="title">Citation</h2>
+      <p>If you like this work and are using these datasets, please cite the original benchmark papers and our PAJAMA!</p>
+
+      <p><strong>Our Latest Version:</strong></p>
+      <pre><code>@article{huang2026codifying,
   title={Codifying the Judge: Scalable Evaluation via Program Distillation},
   author={Huang, Tzu-Heng and Qiu, Shengqi and Sala, Frederic},
+  journal={},
   year={2026}
-}
+}</code></pre>
 
-@article{huang2025time,
+      <p><strong>Our Preliminary Version</strong> (appeared in ICML 2025 Workshop: Programmatic Representations for Agent Learning (PRAL)):</p>
+      <pre><code>@article{huang2025time,
   title={Time to Impeach LLM-as-a-Judge: Programs are the Future of Evaluation},
   author={Huang, Tzu-Heng and Vishwakarma, Harit and Sala, Frederic},
   journal={arXiv preprint arXiv:2506.10403},
