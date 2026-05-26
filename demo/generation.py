@@ -229,10 +229,8 @@ def build_generation_prompt(
     few_shot_text: str,
     prompt_template: str = DEFAULT_PROMPT_TEMPLATE,
     existing_approaches: list[str] | None = None,
-    heuristics: dict[int, dict[str, str]] | None = None,
 ) -> str:
-    table = heuristics if heuristics is not None else HEURISTICS
-    h = table[heuristic_id]
+    h = HEURISTICS[heuristic_id]
     avoid_block = ""
     if existing_approaches:
         descs = "\n".join(f"  - Variant {i+1}: {d}" for i, d in enumerate(existing_approaches))
@@ -259,7 +257,6 @@ def generate_program(
     api_key: str | None = None,
     temperature: float = 0.713,
     max_tokens: int = 5000,
-    heuristics: dict[int, dict[str, str]] | None = None,
 ) -> GenerationOutcome:
     client = _client(api_key)
     prompt = build_generation_prompt(
@@ -268,7 +265,6 @@ def generate_program(
         few_shot_text=few_shot_text,
         prompt_template=prompt_template,
         existing_approaches=existing_approaches,
-        heuristics=heuristics,
     )
     msg = client.messages.create(
         model=MODEL,
