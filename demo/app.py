@@ -198,7 +198,7 @@ with st.sidebar:
         )
     else:
         st.title("PAJAMA Workflow")
-    st.caption("Programmatic judging for pairwise preferences.")
+    st.caption("Programmatic Judge for Pairwise Preferences.")
 
     st.subheader("1 · Mode")
     mode = st.radio(
