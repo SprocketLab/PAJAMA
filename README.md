@@ -15,6 +15,7 @@ Programmatic judges enable scalable, high-throughput, low-cost, and transparent 
 **Install dependencies:**
 
 ```bash
+conda create -n pajama python=3.10
 pip install -r requirements.txt
 ```
 
