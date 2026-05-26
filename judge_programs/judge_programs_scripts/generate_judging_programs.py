@@ -52,6 +52,42 @@ HF_REPO_ID = os.environ.get("PAJAMA_HF_REPO", "sprocket-lab/PAJAMA")
 HF_SPLIT = "validation"
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# judge_programs/judge_programs_scripts/  ->  parent is judge_programs/
+JUDGE_PROGRAMS_ROOT = os.path.dirname(SCRIPT_DIR)
+# judge_programs/judge_programs_scripts/  ->  grandparent is the PAJAMA project root
+PROJECT_ROOT = os.path.dirname(JUDGE_PROGRAMS_ROOT)
+PAJAMA_GEPA_ROOT = os.path.join(PROJECT_ROOT, "pajama_gepa")
+
+
+def gepa_run_dir(prompt_version: int) -> str:
+    return os.path.join(PAJAMA_GEPA_ROOT, f"run_{prompt_version:04d}")
+
+
+def default_candidate_prompt_path(prompt_version: int) -> str:
+    return os.path.join(gepa_run_dir(prompt_version), "candidate_prompt_config.json")
+
+
+def load_candidate_prompt_config(path):
+    """Load a GEPA candidate_prompt_config.json. Returns None if path is falsy."""
+    if not path:
+        return None
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Candidate prompt config not found: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+    print(f"Loaded GEPA candidate prompt config: {path}")
+    return cfg
+
+
+def _candidate_text(cfg, key, default=""):
+    """Pull a string-or-list field out of the candidate config, falling back to default."""
+    if cfg is None:
+        return default
+    value = cfg.get(key, default)
+    if isinstance(value, list):
+        return "\n".join(f"- {x}" for x in value)
+    return str(value)
+
 
 # CLI name -> HF config + output paths.  All PAJAMA val rows share:
 #   query, response1, response2, verdict  (+ score1/score2 when has_scores)
@@ -301,9 +337,23 @@ def format_few_shot_examples(examples):
 
 # ── Prompt ────────────────────────────────────────────────────────────────
 
-def build_prompt(heuristic, few_shot_text, variant_index, existing_approaches=None):
-    """Build generation prompt. Optionally include descriptions of existing
-    variants so Claude knows what NOT to repeat."""
+def build_prompt(
+    heuristic,
+    few_shot_text,
+    variant_index,
+    existing_approaches=None,
+    candidate_prompt_config=None,
+):
+    """Build the program-generation prompt.
+
+    If `candidate_prompt_config` is None we emit the original hand-written
+    prompt (so legacy invocations without --prompt-version keep working).
+    Otherwise we splice GEPA-controlled fields (role, task, scoring,
+    diversity, failure-avoidance, requirements, reflection notes) into the
+    same overall scaffold while keeping the PAJAMA-specific runtime pieces:
+    heuristic, few-shot examples, avoid-block, variant id.
+    """
+
     avoid_block = ""
     if existing_approaches:
         descs = "\n".join(f"  - Variant {i+1}: {d}" for i, d in enumerate(existing_approaches))
@@ -312,33 +362,105 @@ def build_prompt(heuristic, few_shot_text, variant_index, existing_approaches=No
             f"You MUST use a substantially DIFFERENT algorithm:\n{descs}\n"
         )
 
-    return f"""You are an expert Python developer and AI evaluation researcher.
+    # ─── Defaults (used when no candidate_prompt_config is supplied) ───
+    default_role = "You are an expert Python developer and AI evaluation researcher."
 
-Your task: Write a Python function that evaluates the quality of an LLM-generated response
-to a given query. The function should return a numeric score where HIGHER values indicate
-BETTER quality.
+    default_task = (
+        "Your task: Write a Python function that evaluates the quality of an "
+        "LLM-generated response to a given query. The function should return a "
+        "numeric score where HIGHER values indicate BETTER quality."
+    )
+
+    default_scoring = (
+        "Use lightweight Python string/math/statistical features that plausibly "
+        "correlate with human preference. The function is later applied to "
+        "Response A and Response B separately; the higher score wins."
+    )
+
+    default_diversity = (
+        f"This is variant {variant_index}/{PROGRAMS_PER_HEURISTIC}. Use a "
+        "meaningfully different algorithm, feature set, and scoring formula "
+        "than other variants for this heuristic."
+    )
+
+    default_failure_avoidance = (
+        "Avoid constant outputs, fragile code, heavy dependencies, and simple "
+        "length-only scoring. The function must be discriminative across "
+        "high-quality and low-quality responses."
+    )
+
+    default_requirements = [
+        "Output ONLY valid, executable Python code inside ```python ... ``` blocks. No explanation.",
+        "The function signature must be exactly: def judging_function(query, response):",
+        "Return a single numeric score (int or float). Higher = better quality.",
+        "Use standard Python string/math operations for speed.",
+        "You may use common libraries (re, math, collections, string, statistics) but NO heavy ML/NLP libraries.",
+        f"This is variant {variant_index}/{PROGRAMS_PER_HEURISTIC} — use a MEANINGFULLY DIFFERENT algorithm, features, and scoring formula than other variants.",
+        "Include comprehensive error handling (try/except) so the function never crashes.",
+        "The function must handle edge cases (empty strings, very short/long inputs).",
+        "Return scores in a reasonable numeric range (e.g., 0-10 or 0-100).",
+        "Make the function DISCRIMINATIVE: clearly different scores for high-quality vs low-quality responses.",
+    ]
+
+    # ─── Resolve GEPA-controlled blocks (falling back to defaults) ───
+    role_instruction = _candidate_text(
+        candidate_prompt_config, "role_instruction", default_role
+    )
+    task_instruction = _candidate_text(
+        candidate_prompt_config, "task_instruction", default_task
+    )
+    scoring_guidance = _candidate_text(
+        candidate_prompt_config, "scoring_guidance", default_scoring
+    )
+    diversity_instruction = _candidate_text(
+        candidate_prompt_config, "diversity_instruction", default_diversity
+    )
+    failure_avoidance_instruction = _candidate_text(
+        candidate_prompt_config,
+        "failure_avoidance_instruction",
+        default_failure_avoidance,
+    )
+
+    if candidate_prompt_config is not None:
+        req_value = candidate_prompt_config.get("requirements_block", default_requirements)
+    else:
+        req_value = default_requirements
+    if isinstance(req_value, list):
+        requirements_text = "\n".join(f"- {x}" for x in req_value)
+    else:
+        requirements_text = str(req_value)
+
+    reflection_notes = ""
+    if candidate_prompt_config is not None and candidate_prompt_config.get("reflection_notes"):
+        notes = "\n".join(f"- {x}" for x in candidate_prompt_config["reflection_notes"])
+        reflection_notes = (
+            "\nFEEDBACK FROM PREVIOUS PAJAMA-GEPA ROUNDS:\n"
+            f"{notes}\n"
+        )
+
+    return f"""{role_instruction}
+
+{task_instruction}
+
+SCORING CONTEXT:
+{scoring_guidance}
 
 EVALUATION STRATEGY — focus STRICTLY on this dimension:
 {heuristic['name']}: {heuristic['description']}
 {avoid_block}
+DIVERSITY REQUIREMENT:
+{diversity_instruction}
+
+FAILURE AVOIDANCE:
+{failure_avoidance_instruction}
+{reflection_notes}
 Here are some real examples from our dataset so you can understand what real queries and
 responses look like, and what "good" vs "bad" answers look like in practice:
 
 {few_shot_text}
 
 IMPORTANT REQUIREMENTS:
-- Output ONLY valid, executable Python code inside ```python ... ``` blocks. No explanation.
-- The function signature must be exactly: def judging_function(query, response):
-- Return a single numeric score (int or float). Higher = better quality.
-- Use standard Python string/math operations for speed. You may use common libraries
-  (re, math, collections, string, statistics) but NO heavy ML/NLP libraries.
-- This is variant {variant_index}/{PROGRAMS_PER_HEURISTIC} — use a MEANINGFULLY DIFFERENT
-  algorithm, features, and scoring formula than other variants.
-- Include comprehensive error handling (try/except) so the function never crashes.
-- The function must handle edge cases (empty strings, very short/long inputs).
-- Return scores in a reasonable numeric range (e.g., 0-10 or 0-100).
-- Make the function DISCRIMINATIVE: it should produce clearly different scores for
-  high-quality vs low-quality responses.
+{requirements_text}
 
 ```python
 def judging_function(query, response):
@@ -501,6 +623,34 @@ def parse_args():
         help="Number of few-shot examples sampled from the HF validation split",
     )
     p.add_argument("--seed", type=int, default=SEED)
+    p.add_argument(
+        "--prompt-version",
+        "--prompt_version",
+        dest="prompt_version",
+        type=int,
+        default=None,
+        help=(
+            "GEPA prompt version n. Loads "
+            "pajama_gepa/run_000n/candidate_prompt_config.json and writes "
+            "programs to judge_programs/judge_programs_<dataset>_v<n>/ plus "
+            "judge_programs/program_manifest_<dataset>_v<n>.json."
+        ),
+    )
+    p.add_argument(
+        "--candidate-prompt",
+        default=None,
+        help="Explicit path to candidate_prompt_config.json (overrides --prompt-version).",
+    )
+    p.add_argument(
+        "--output-dir",
+        default=None,
+        help="Explicit judge program output directory (overrides defaults).",
+    )
+    p.add_argument(
+        "--manifest",
+        default=None,
+        help="Explicit manifest path (overrides defaults).",
+    )
     return p.parse_args()
 
 
@@ -509,8 +659,34 @@ def main():
     dataset_key = resolve_dataset_name(args.dataset)
     cfg = DATASET_CONFIGS[dataset_key]
 
-    output_dir = os.path.join(SCRIPT_DIR, cfg["output_dir"])
-    manifest_path = os.path.join(SCRIPT_DIR, cfg["manifest"])
+    # ── Resolve GEPA candidate prompt config (if any) ─────────────────────
+    candidate_prompt_path = args.candidate_prompt
+    if candidate_prompt_path is None and args.prompt_version is not None:
+        candidate_prompt_path = default_candidate_prompt_path(args.prompt_version)
+    candidate_prompt_config = load_candidate_prompt_config(candidate_prompt_path)
+
+    # ── Resolve output dir + manifest path ────────────────────────────────
+    # With --prompt-version we write to the canonical GEPA layout under
+    # judge_programs/ (one level above SCRIPT_DIR), to match the user's
+    # existing judge_programs_<dataset>/ convention.
+    # Without --prompt-version we preserve the original SCRIPT_DIR-based
+    # location so legacy invocations behave identically.
+    if args.prompt_version is not None:
+        default_output_dir = os.path.join(
+            JUDGE_PROGRAMS_ROOT,
+            f"{cfg['output_dir']}_v{args.prompt_version}",
+        )
+        manifest_base = cfg["manifest"].replace(".json", "")
+        default_manifest_path = os.path.join(
+            JUDGE_PROGRAMS_ROOT,
+            f"{manifest_base}_v{args.prompt_version}.json",
+        )
+    else:
+        default_output_dir = os.path.join(SCRIPT_DIR, cfg["output_dir"])
+        default_manifest_path = os.path.join(SCRIPT_DIR, cfg["manifest"])
+
+    output_dir = args.output_dir if args.output_dir else default_output_dir
+    manifest_path = args.manifest if args.manifest else default_manifest_path
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -526,6 +702,10 @@ def main():
     print(f"Manifest:    {manifest_path}")
     print(f"Few-shot:    {args.num_few_shot} examples from validation split")
     print(f"Has scores:  {cfg['has_scores']}")
+    print(f"Prompt ver:  "
+          f"{args.prompt_version if args.prompt_version is not None else 'default (no GEPA)'}")
+    print(f"Prompt cfg:  "
+          f"{candidate_prompt_path if candidate_prompt_path else 'default built-in prompt'}")
     print()
 
     print(f"Loading {args.num_few_shot} few-shot examples from Hugging Face ...")
@@ -597,8 +777,11 @@ def main():
 
             try:
                 prompt = build_prompt(
-                    heuristic, few_shot_text, plan["variant"],
-                    existing_approaches=existing_approaches if existing_approaches else None
+                    heuristic,
+                    few_shot_text,
+                    plan["variant"],
+                    existing_approaches=existing_approaches if existing_approaches else None,
+                    candidate_prompt_config=candidate_prompt_config,
                 )
 
                 api_kwargs = dict(
@@ -676,6 +859,8 @@ def main():
             "heuristic_name": plan["heuristic_name"],
             "variant": plan["variant"],
             "status": best_status,
+            "prompt_version": args.prompt_version,
+            "candidate_prompt_path": candidate_prompt_path,
         }
         if best_code is not None:
             entry["approach_summary"] = summarize_approach(best_code)
