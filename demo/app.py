@@ -1,5 +1,5 @@
 """
-PAJAMA Labeling Studio — Streamlit demo.
+PAJAMA Workflow — Streamlit demo.
 
 Run with:
     streamlit run app.py
@@ -16,6 +16,7 @@ Workflow:
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import os
@@ -41,12 +42,39 @@ MOCK_MANIFEST = PAJAMA_ROOT / "synthesized_programmatic_judges" / "manifest_judg
 MOCK_SAMPLE = THIS_DIR / "examples" / "judgelm_sample_60.jsonl"
 MOCK_CACHED_S1 = PAJAMA_ROOT / "pajama_workflow" / "judgelm_outputs" / "test_s1.npy"
 MOCK_CACHED_S2 = PAJAMA_ROOT / "pajama_workflow" / "judgelm_outputs" / "test_s2.npy"
+MOCK_PIPELINE_SUMMARY = (
+    PAJAMA_ROOT / "pajama_workflow" / "judgelm_outputs" / "judgelm_pipeline_summary.json"
+)
+
+MOCK_SAMPLE_SIZE = 50
+
+# ── Branding ────────────────────────────────────────────────────────────
+# Pajamas icon by Freepik (https://www.flaticon.com/free-icon/pajamas_2892174),
+# bundled locally so the demo doesn't depend on a remote CDN at runtime.
+ICON_PATH = THIS_DIR / "assets" / "pajamas_icon.png"
+
+
+def _icon_data_uri() -> str:
+    """Return the pajamas icon as a base64 data URI for inline HTML use.
+
+    Falls back to an empty string if the icon file is missing so the rest
+    of the app still renders.
+    """
+    if not ICON_PATH.exists():
+        return ""
+    try:
+        return "data:image/png;base64," + base64.b64encode(ICON_PATH.read_bytes()).decode()
+    except Exception:
+        return ""
+
+
+ICON_DATA_URI = _icon_data_uri()
 
 
 # ── Page setup ──────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="PAJAMA Labeling Studio",
-    page_icon="🧪",
+    page_title="PAJAMA Workflow",
+    page_icon=str(ICON_PATH) if ICON_PATH.exists() else "🧪",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -66,7 +94,7 @@ def init_state():
     ss.setdefault("prompt_chat", [])  # list[{role, content}]
     ss.setdefault("program_chats", {})  # {program_id: list[{role, content}]}
     ss.setdefault("editing_program_id", None)
-    ss.setdefault("abstain_band", 0.02)
+    ss.setdefault("abstain_band", 0.15)
 
 
 init_state()
@@ -87,7 +115,7 @@ def _load_mock_sample():
     if not MOCK_SAMPLE.exists():
         st.error(f"Mock sample missing: {MOCK_SAMPLE}")
         return None, None
-    rows = P.load_jsonl(str(MOCK_SAMPLE))
+    rows = P.load_jsonl(str(MOCK_SAMPLE))[:MOCK_SAMPLE_SIZE]
     orig = [int(r.get("_orig_test_index", -1)) for r in rows]
     return rows, orig
 
@@ -101,7 +129,7 @@ def _bootstrap_mock():
         return
     st.session_state.rows = rows
     st.session_state.orig_indices = orig
-    st.session_state.rows_source = f"mock: judgelm sample ({len(rows)} rows)"
+    st.session_state.rows_source = f"mock: judgelm sample ({len(rows)} samples)"
     st.session_state.programs = progs
     st.session_state.aggregation = None
 
@@ -158,8 +186,19 @@ def _score_with_programs(rows, programs, progress_text="Scoring"):
 
 # ── Sidebar ─────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("🧪 PAJAMA Labeling Studio")
-    st.caption("Val-free weak supervision for pairwise preference data.")
+    if ICON_DATA_URI:
+        st.markdown(
+            f"""
+            <h1 style="display:flex;align-items:center;gap:10px;margin:0 0 0.25rem 0;">
+                <img src="{ICON_DATA_URI}" width="36" height="36" style="vertical-align:middle;" alt="pajamas icon"/>
+                <span>PAJAMA Workflow</span>
+            </h1>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.title("PAJAMA Workflow")
+    st.caption("Programmatic judging for pairwise preferences.")
 
     st.subheader("1 · Mode")
     mode = st.radio(
@@ -186,7 +225,7 @@ with st.sidebar:
 
     st.subheader("2 · Dataset")
     if mode == "mock":
-        if st.button("Load judgelm sample (60 rows)", use_container_width=True):
+        if st.button(f"Load judgelm sample ({MOCK_SAMPLE_SIZE} samples)", use_container_width=True):
             _bootstrap_mock()
             st.success("Mock dataset + 80 cached programs loaded.")
     else:
@@ -200,9 +239,9 @@ with st.sidebar:
             rows = [json.loads(line) for line in text.splitlines() if line.strip()]
             st.session_state.rows = rows
             st.session_state.orig_indices = None
-            st.session_state.rows_source = f"uploaded: {uploaded.name} ({len(rows)} rows)"
+            st.session_state.rows_source = f"uploaded: {uploaded.name} ({len(rows)} samples)"
             st.session_state.aggregation = None
-            st.success(f"Loaded {len(rows)} rows.")
+            st.success(f"Loaded {len(rows)} samples.")
 
     if st.session_state.rows is not None:
         st.caption(f"📁 {st.session_state.rows_source}")
@@ -219,23 +258,23 @@ with st.sidebar:
 
     st.subheader("4 · Aggregation")
     st.session_state.abstain_band = st.slider(
-        "Abstain band (|diff| ≤ band → abstain)",
+        "Abstain threshold (|diff| ≤ threshold → abstain)",
         min_value=0.00,
-        max_value=0.20,
+        max_value=0.50,
         value=float(st.session_state.abstain_band),
         step=0.01,
-        help="Width of the no-confidence band around 0 used to decide abstention.",
+        help="Width of the no-confidence threshold around 0 used to decide abstention.",
     )
 
     st.markdown("---")
     n_progs = len(st.session_state.programs) if st.session_state.programs else 0
     n_sel = len(_selected_programs())
     n_rows = len(st.session_state.rows) if st.session_state.rows else 0
-    st.caption(f"**State:** {n_rows} rows · {n_sel}/{n_progs} programs selected")
+    st.caption(f"**State:** {n_rows} samples · {n_sel}/{n_progs} programs selected")
 
 
 # ── Main ────────────────────────────────────────────────────────────────
-st.title("PAJAMA Labeling Studio")
+st.title("PAJAMA Workflow")
 st.caption(
     "Generate programmatic judges → aggregate with Snorkel → download labeled preference data."
 )
@@ -263,7 +302,7 @@ with tab_data:
                     "response2": str(r.get("response2", ""))[:140],
                     "verdict": r.get("verdict", "—"),
                 }
-                for i, r in enumerate(rows[:50])
+                for i, r in enumerate(rows)
             ]
         )
         st.dataframe(preview_df, use_container_width=True, hide_index=True)
@@ -679,7 +718,7 @@ with tab_agg:
 
     st.markdown("### Val-free Snorkel aggregation")
     st.caption(
-        "Per-program robust normalization → diff → vote with abstain band → "
+        "Per-program robust normalization → diff → vote with abstain threshold → "
         "fit LabelModel directly on all selected programs."
     )
 
@@ -809,23 +848,59 @@ with tab_results:
             ]
         )
 
-        # KPI: agreement with gold where gold is available
-        gold = [r.get("verdict") for r in labeled]
-        gold_known = [(i, g) for i, g in enumerate(gold) if g in (1, "1", 2, 2.0, "2")]
-        if gold_known:
-            covered = [
-                (g, labeled[i]["pajama_predicted_verdict"])
-                for i, g in gold_known
-                if not labeled[i]["pajama_abstained"]
-            ]
-            if covered:
-                agree = sum(int(int(g) == int(p)) for g, p in covered)
-                st.metric(
-                    "Agreement with gold (on covered rows)",
-                    f"{100*agree/len(covered):.1f}%",
-                    help=f"{agree}/{len(covered)} covered rows agree with gold verdict.",
-                )
+        # KPI: agreement with gold.
+        # In mock mode, surface the precomputed full-validation-set metric
+        # (500 samples) so the headline number reflects the entire validation
+        # dataset rather than just the 50 samples previewed below.
+        val_metric_shown = False
+        if st.session_state.mode == "mock" and MOCK_PIPELINE_SUMMARY.exists():
+            try:
+                with open(MOCK_PIPELINE_SUMMARY) as f:
+                    summary = json.load(f)
+                vm = summary.get("LabelModel_val") or {}
+                acc = vm.get("accuracy")
+                n_total = vm.get("n_total")
+                n_covered = vm.get("n_covered")
+                if acc is not None and n_total and n_covered:
+                    st.metric(
+                        "Agreement with gold (on covered samples)",
+                        f"{100*acc:.1f}%",
+                        help=(
+                            f"Precomputed LabelModel agreement over the full "
+                            f"{n_total}-sample validation split of "
+                            f"sprocket-lab/PAJAMA (judgelm subset on Hugging "
+                            f"Face): {n_covered}/{n_total} covered samples "
+                            f"agree with the gold verdict."
+                        ),
+                    )
+                    st.caption(
+                        f"Headline metric is computed on all {n_total} validation samples "
+                        f"from the `sprocket-lab/PAJAMA` judgelm subset on Hugging Face."
+                    )
+                    val_metric_shown = True
+            except Exception:
+                val_metric_shown = False
 
+        if not val_metric_shown:
+            gold = [r.get("verdict") for r in labeled]
+            gold_known = [(i, g) for i, g in enumerate(gold) if g in (1, "1", 2, 2.0, "2")]
+            if gold_known:
+                covered = [
+                    (g, labeled[i]["pajama_predicted_verdict"])
+                    for i, g in gold_known
+                    if not labeled[i]["pajama_abstained"]
+                ]
+                if covered:
+                    agree = sum(int(int(g) == int(p)) for g, p in covered)
+                    st.metric(
+                        "Agreement with gold (on covered samples)",
+                        f"{100*agree/len(covered):.1f}%",
+                        help=f"{agree}/{len(covered)} covered samples agree with gold verdict.",
+                    )
+
+        st.caption(
+            f"Showing predicted labels for the {len(df)} loaded samples below."
+        )
         st.dataframe(df, use_container_width=True, hide_index=True)
 
         buf = io.StringIO()
