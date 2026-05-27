@@ -1,18 +1,11 @@
 """
-Val-free Snorkel aggregation for PAJAMA-style pairwise preference labeling.
+PAJAMA demo pipelines: program loading, scoring, and Snorkel aggregation.
 
-Pipeline (no validation set required):
-  1. Score each (response1, response2) with all N programs -> (n, N) matrices s1, s2.
-  2. Per-program robust normalization (P1/P99 over pooled scores).
-  3. diff = norm(s1) - norm(s2) in [-1, 1].
-  4. Vote with a small fixed abstain band:
-        diff >  band -> 0  (response1 preferred)
-        diff < -band -> 1  (response2 preferred)
-        else         -> -1 (abstain)
-  5. Fit Snorkel LabelModel directly on the (n, N) label matrix.
-  6. Return per-program weights, coverage, conflict, plus hard/soft labels.
+**Live mode** — val-free aggregation (no validation set):
+  score rows → normalize → fixed abstain band → LabelModel.
 
-No threshold tuning, no top-k pruning, no validation set.
+**Demo / mock mode** — production pipeline ported from ``pajama_workflow/run.py``:
+  cached val scores → per-program threshold tuning → filter → top-k → LabelModel.
 """
 
 from __future__ import annotations
@@ -21,12 +14,15 @@ import importlib.util
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any
+from pathlib import Path
+from typing import Any, Callable
 
 import numpy as np
-
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from snorkel.labeling import LFAnalysis
-from snorkel.labeling.model import LabelModel
+from snorkel.labeling.model import LabelModel, MajorityLabelVoter
+
+ProgressCallback = Callable[[float, str], None] | None
 
 
 # ── Program loading ──────────────────────────────────────────────────────
@@ -319,15 +315,366 @@ def aggregate(
     )
 
 
-def label_jsonl_export(rows: list[dict], result: AggregationResult) -> list[dict]:
-    """Return the rows with predicted labels attached (ready to write back to JSONL)."""
+def attach_predictions_to_rows(
+    rows: list[dict], hard: np.ndarray, soft: np.ndarray
+) -> list[dict]:
+    """Attach PAJAMA predictions to row dicts (verdict 1=R1, 2=R2)."""
     out: list[dict] = []
     for i, row in enumerate(rows):
-        pred = int(result.hard[i])
-        prob = float(result.soft[i]) if not np.isnan(result.soft[i]) else None
+        pred = int(hard[i])
+        prob = float(soft[i]) if not np.isnan(soft[i]) else None
         labeled = dict(row)
         labeled["pajama_predicted_verdict"] = {0: 1, 1: 2, -1: None}[pred]
         labeled["pajama_response2_prob"] = prob
         labeled["pajama_abstained"] = pred == -1
         out.append(labeled)
     return out
+
+
+def label_jsonl_export(rows: list[dict], result: AggregationResult) -> list[dict]:
+    """Return the rows with predicted labels attached (ready to write back to JSONL)."""
+    return attach_predictions_to_rows(rows, result.hard, result.soft)
+
+
+# ── Production pipeline (mock mode; run.py stages 2–6) ───────────────────
+
+SNORKEL_CARDINALITY = 2
+SNORKEL_EPOCHS = 500
+SNORKEL_SEED = 123
+SNORKEL_L2 = 0.01
+SNORKEL_LR = 0.01
+MIN_ACCURACY_THRESHOLD = 0.50
+N_PROGRAMS = 80
+
+
+def threshold_candidates(threshold_max: float) -> np.ndarray:
+    """Per-program tuning grid; ``run.py`` uses 0.00–0.15 (step 0.01)."""
+    tmax = float(np.clip(threshold_max, 0.0, 0.50))
+    return np.arange(0.0, tmax + 0.005, 0.01)
+
+
+def compute_norm_params(s1: np.ndarray, s2: np.ndarray) -> list[tuple[float, float]]:
+    m = s1.shape[1]
+    params: list[tuple[float, float]] = []
+    for j in range(m):
+        pooled = np.concatenate([
+            s1[:, j][~np.isnan(s1[:, j])],
+            s2[:, j][~np.isnan(s2[:, j])],
+        ])
+        if len(pooled) > 1 and np.ptp(pooled) > 0:
+            lo = float(np.percentile(pooled, 1))
+            hi = float(np.percentile(pooled, 99))
+            if hi <= lo:
+                lo, hi = float(pooled.min()), float(pooled.max())
+        else:
+            lo, hi = 0.0, 1.0
+        params.append((lo, hi))
+    return params
+
+
+def normalize_and_diff(
+    s1: np.ndarray, s2: np.ndarray, params: list[tuple[float, float]]
+) -> np.ndarray:
+    n, m = s1.shape
+    diffs = np.full((n, m), np.nan)
+    for j in range(m):
+        lo, hi = params[j]
+        rng = hi - lo
+        if rng > 0:
+            n1 = np.clip((s1[:, j] - lo) / rng, 0.0, 1.0)
+            n2 = np.clip((s2[:, j] - lo) / rng, 0.0, 1.0)
+        else:
+            n1 = np.full(n, 0.5)
+            n2 = np.full(n, 0.5)
+        diffs[:, j] = n1 - n2
+        mask = np.isnan(s1[:, j]) | np.isnan(s2[:, j])
+        diffs[mask, j] = np.nan
+    return diffs
+
+
+def apply_threshold(diffs: np.ndarray, threshold: float) -> np.ndarray:
+    labels = np.full(diffs.shape, -1, dtype=int)
+    labels[diffs > threshold] = 0
+    labels[diffs < -threshold] = 1
+    labels[np.isnan(diffs)] = -1
+    return labels
+
+
+def tune_thresholds(
+    val_diffs: np.ndarray,
+    y_val: np.ndarray,
+    candidates: np.ndarray,
+    progress_callback: ProgressCallback = None,
+    progress_lo: float = 0.0,
+    progress_hi: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    m = val_diffs.shape[1]
+    best_t = np.zeros(m)
+    best_acc = np.zeros(m)
+    for j in range(m):
+        top_acc, top_t = -1.0, 0.0
+        for t in candidates:
+            votes = apply_threshold(val_diffs[:, j : j + 1], float(t)).flatten()
+            valid = votes != -1
+            if valid.sum() == 0:
+                continue
+            a = accuracy_score(y_val[valid], votes[valid])
+            if a > top_acc or (a == top_acc and t > top_t):
+                top_acc, top_t = a, float(t)
+        best_t[j] = top_t
+        best_acc[j] = top_acc
+        if progress_callback is not None:
+            frac = progress_lo + (j + 1) / m * (progress_hi - progress_lo)
+            progress_callback(frac, f"Tuning per-program thresholds… {j + 1}/{m}")
+    return best_t, best_acc
+
+
+def build_label_matrix(
+    diffs: np.ndarray, indices: np.ndarray | list[int], thresholds: np.ndarray
+) -> np.ndarray:
+    n = diffs.shape[0]
+    indices = list(indices)
+    M = np.full((n, len(indices)), -1, dtype=int)
+    for col, j in enumerate(indices):
+        M[:, col] = apply_threshold(diffs[:, j : j + 1], float(thresholds[j])).flatten()
+    return M
+
+
+def _full_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+    v = y_pred != -1
+    cov = float(v.mean()) if len(v) else 0.0
+    if v.sum() == 0:
+        return {"agreement": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0, "coverage": 0.0}
+    yt, yp = y_true[v], y_pred[v]
+    return {
+        "agreement": float(accuracy_score(yt, yp)),
+        "precision": float(precision_score(yt, yp, average="macro", zero_division=0)),
+        "recall": float(recall_score(yt, yp, average="macro", zero_division=0)),
+        "f1": float(f1_score(yt, yp, average="macro", zero_division=0)),
+        "coverage": cov,
+    }
+
+
+def _program_id_from_col(j: int) -> int:
+    return j + 1
+
+
+def _judge_name(j: int) -> str:
+    return f"judge_{_program_id_from_col(j)}"
+
+
+def load_demo_val_arrays(outputs_dir: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    root = Path(outputs_dir)
+    p1, p2, pg = root / "val_s1.npy", root / "val_s2.npy", root / "val_gold.npy"
+    if not (p1.exists() and p2.exists() and pg.exists()):
+        return None
+    return np.load(p1), np.load(p2), np.load(pg)
+
+
+def save_summary(summary: dict, path: str | Path) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+
+
+@dataclass
+class ProductionPipelineResult:
+    """Outcome of one production-pipeline run at a given ``threshold_max``."""
+
+    summary: dict
+    label_model: Any
+    threshold_max: float
+    norm_params: list[tuple[float, float]]
+    best_thresholds: np.ndarray
+    best_accuracies: np.ndarray
+    selected_col_indices: list[int]
+    selected_program_ids: list[int]
+    M_val: np.ndarray
+    Y_hat_val: np.ndarray
+    y_val: np.ndarray
+    weights: np.ndarray
+    coverage: np.ndarray
+    conflicts: np.ndarray
+    program_ids_for_display: list[int] = field(default_factory=list)
+
+
+def run_from_cached_scores(
+    val_s1: np.ndarray,
+    val_s2: np.ndarray,
+    y_val: np.ndarray,
+    *,
+    threshold_max: float = 0.14,
+    min_accuracy: float = MIN_ACCURACY_THRESHOLD,
+    tag: str = "judgelm",
+    progress_callback: ProgressCallback = None,
+) -> ProductionPipelineResult:
+    """Run stages 2–6 of ``run.py`` on cached validation scores."""
+
+    def report(frac: float, msg: str) -> None:
+        if progress_callback is not None:
+            progress_callback(min(1.0, max(0.0, frac)), msg)
+
+    report(0.0, "Starting production pipeline…")
+    candidates = threshold_candidates(threshold_max)
+
+    report(0.05, "Normalizing scores (per-program min-max)…")
+    norm_params = compute_norm_params(val_s1, val_s2)
+    val_diffs = normalize_and_diff(val_s1, val_s2, norm_params)
+
+    best_thresholds, best_accuracies = tune_thresholds(
+        val_diffs,
+        y_val,
+        candidates,
+        progress_callback=progress_callback,
+        progress_lo=0.10,
+        progress_hi=0.42,
+    )
+
+    report(0.45, "Filtering programs by validation accuracy…")
+    surviving = np.where(best_accuracies >= min_accuracy)[0]
+    ranked = np.argsort(best_accuracies)[::-1]
+    ranked_surv = [int(i) for i in ranked if best_accuracies[i] >= min_accuracy]
+
+    report(0.48, f"Selecting top-k programs (1–{N_PROGRAMS} of {N_PROGRAMS} judges)…")
+    best_k, best_agree = len(ranked_surv), 0.0
+    n_sweep = max(len(ranked_surv), 1)
+    for k in range(1, len(ranked_surv) + 1):
+        selected = ranked_surv[:k]
+        M_va_k = build_label_matrix(val_diffs, selected, best_thresholds)
+        if k >= 3:
+            try:
+                lm_k = LabelModel(cardinality=SNORKEL_CARDINALITY, verbose=False)
+                lm_k.fit(
+                    L_train=M_va_k,
+                    Y_dev=y_val,
+                    n_epochs=200,
+                    l2=SNORKEL_L2,
+                    lr=SNORKEL_LR,
+                    seed=SNORKEL_SEED,
+                )
+                yh_k = lm_k.predict(L=M_va_k, tie_break_policy="random")
+            except Exception:
+                continue
+        else:
+            mv_k = MajorityLabelVoter(cardinality=SNORKEL_CARDINALITY)
+            yh_k = mv_k.predict(L=M_va_k, tie_break_policy="random")
+        v = yh_k != -1
+        if v.sum() > 0:
+            agree = accuracy_score(y_val[v], yh_k[v])
+            if agree > best_agree:
+                best_agree = agree
+                best_k = k
+        report(
+            0.48 + 0.24 * (k / n_sweep),
+            f"Top-k sweep… {k}/{N_PROGRAMS}",
+        )
+
+    selected_programs = ranked_surv[:best_k]
+    M_val = build_label_matrix(val_diffs, selected_programs, best_thresholds)
+
+    report(0.75, f"Training Snorkel LabelModel (top-{best_k} programs)…")
+    label_model = LabelModel(cardinality=SNORKEL_CARDINALITY, verbose=False)
+    label_model.fit(
+        L_train=M_val,
+        Y_dev=y_val,
+        n_epochs=SNORKEL_EPOCHS,
+        l2=SNORKEL_L2,
+        lr=SNORKEL_LR,
+        seed=SNORKEL_SEED,
+    )
+
+    report(0.92, "Computing validation predictions and metrics…")
+    val_all_abstain = (M_val == -1).all(axis=1)
+    covered_val = ~val_all_abstain
+    n_val_total = len(y_val)
+    n_val_covered = int(covered_val.sum())
+
+    Y_hat_val = np.full(n_val_total, -1, dtype=int)
+    if n_val_covered > 0:
+        Y_hat_val[covered_val] = label_model.predict(
+            L=M_val[covered_val], tie_break_policy="random"
+        )
+
+    metrics_lm_val = _full_metrics(y_val, Y_hat_val)
+
+    weights = np.asarray(label_model.get_weights(), dtype=float)
+    coverage = (M_val != -1).mean(axis=0)
+    try:
+        analysis = LFAnalysis(L=M_val).lf_summary()
+        conflicts = analysis["Conflicts"].to_numpy()
+    except Exception:
+        conflicts = np.zeros(len(selected_programs))
+
+    report(1.0, "Pipeline complete.")
+
+    selected_col_indices = [int(c) for c in selected_programs]
+    selected_program_names = [_judge_name(c) for c in selected_col_indices]
+    selected_program_ids = [_program_id_from_col(c) for c in selected_col_indices]
+    selected_program_thresholds = [float(best_thresholds[c]) for c in selected_col_indices]
+    selected_program_val_accs = [float(best_accuracies[c]) for c in selected_col_indices]
+
+    summary = {
+        "dataset": tag,
+        "method": "program_judge",
+        "threshold_max": round(float(threshold_max), 4),
+        "best_k": int(best_k),
+        "n_total_programs": int(val_s1.shape[1]),
+        "n_surviving_programs": int(len(surviving)),
+        "selected_program_ids": selected_program_ids,
+        "selected_program_names": selected_program_names,
+        "selected_program_col_indices": selected_col_indices,
+        "selected_program_thresholds": selected_program_thresholds,
+        "selected_program_val_accuracies": selected_program_val_accs,
+        "LabelModel_val": {
+            "n_total": n_val_total,
+            "n_covered": n_val_covered,
+            "accuracy": round(metrics_lm_val["agreement"], 4),
+            "precision": round(metrics_lm_val["precision"], 4),
+            "recall": round(metrics_lm_val["recall"], 4),
+            "f1": round(metrics_lm_val["f1"], 4),
+            "coverage": round(metrics_lm_val["coverage"], 4),
+        },
+    }
+
+    return ProductionPipelineResult(
+        summary=summary,
+        label_model=label_model,
+        threshold_max=float(threshold_max),
+        norm_params=norm_params,
+        best_thresholds=best_thresholds,
+        best_accuracies=best_accuracies,
+        selected_col_indices=selected_col_indices,
+        selected_program_ids=selected_program_ids,
+        M_val=M_val,
+        Y_hat_val=Y_hat_val,
+        y_val=y_val,
+        weights=weights,
+        coverage=coverage,
+        conflicts=conflicts,
+        program_ids_for_display=selected_program_ids,
+    )
+
+
+def predict_on_scores(
+    s1: np.ndarray,
+    s2: np.ndarray,
+    pipe: ProductionPipelineResult,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply a fitted production pipeline to arbitrary (n, 80) score matrices."""
+    diffs = normalize_and_diff(s1, s2, pipe.norm_params)
+    M = build_label_matrix(diffs, pipe.selected_col_indices, pipe.best_thresholds)
+
+    n = M.shape[0]
+    hard = np.full(n, -1, dtype=int)
+    soft = np.full(n, np.nan)
+
+    all_abstain = (M == -1).all(axis=1)
+    covered = ~all_abstain
+    if covered.any():
+        hard[covered] = pipe.label_model.predict(L=M[covered], tie_break_policy="abstain")
+        proba = pipe.label_model.predict_proba(L=M[covered])
+        soft[covered] = proba[:, 1]
+    hard[all_abstain] = -1
+    soft[all_abstain] = np.nan
+    return hard, soft

@@ -4,14 +4,11 @@ PAJAMA Workflow — Streamlit demo.
 Run with:
     streamlit run app.py
 
-Workflow:
-  1. Sidebar  → choose Mock or Live mode, upload (or load sample) JSONL.
-  2. Programs → view / edit / remove / select any of the 80 generated programs.
-                Per-program chat to regenerate one program with Claude.
-  3. Prompt   → view the prompt template used for generation; chat with Claude to refine it.
-  4. Aggregate→ run the val-free Snorkel pipeline on the selected programs,
-                see per-program weight / coverage / conflict.
-  5. Results  → preview labeled rows and download labeled JSONL.
+Top workflow (no sidebar):
+  1. Start    → Mock / Live mode + load data
+  2. Prompt   → generation template (+ optional Claude chat in Live mode)
+  3. Programs → 80 judges as rows (Edit / Chat / Delete)
+  4. Results  → aggregation + labeled output
 """
 
 from __future__ import annotations
@@ -40,11 +37,15 @@ PAJAMA_ROOT = THIS_DIR.parent
 MOCK_JUDGES_DIR = PAJAMA_ROOT / "synthesized_programmatic_judges" / "judgelm"
 MOCK_MANIFEST = PAJAMA_ROOT / "synthesized_programmatic_judges" / "manifest_judgelm.json"
 MOCK_SAMPLE = THIS_DIR / "examples" / "judgelm_sample_60.jsonl"
-MOCK_CACHED_S1 = PAJAMA_ROOT / "pajama_workflow" / "judgelm_outputs" / "test_s1.npy"
-MOCK_CACHED_S2 = PAJAMA_ROOT / "pajama_workflow" / "judgelm_outputs" / "test_s2.npy"
-MOCK_PIPELINE_SUMMARY = (
-    PAJAMA_ROOT / "pajama_workflow" / "judgelm_outputs" / "judgelm_pipeline_summary.json"
-)
+
+# Cached scores + gold labels copied from pajama_workflow/judgelm_outputs.
+# The demo re-runs the production pipeline (run.py logic) on these arrays.
+DEMO_OUTPUTS = THIS_DIR / "outputs"
+DEMO_VAL_S1 = DEMO_OUTPUTS / "val_s1.npy"
+DEMO_VAL_S2 = DEMO_OUTPUTS / "val_s2.npy"
+DEMO_TEST_S1 = DEMO_OUTPUTS / "test_s1.npy"
+DEMO_TEST_S2 = DEMO_OUTPUTS / "test_s2.npy"
+DEMO_PIPELINE_SUMMARY = DEMO_OUTPUTS / "pipeline_summary.json"
 
 MOCK_SAMPLE_SIZE = 50
 
@@ -75,8 +76,8 @@ ICON_DATA_URI = _icon_data_uri()
 st.set_page_config(
     page_title="PAJAMA Workflow",
     page_icon=str(ICON_PATH) if ICON_PATH.exists() else "🧪",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    layout="centered",
+    initial_sidebar_state="collapsed",
 )
 
 
@@ -89,15 +90,163 @@ def init_state():
     ss.setdefault("rows_source", "")  # "mock", "uploaded", etc.
     ss.setdefault("orig_indices", None)  # for mock mode: indices into cached test arrays
     ss.setdefault("programs", None)  # list[Program]
-    ss.setdefault("aggregation", None)  # AggregationResult
+    ss.setdefault("aggregation", None)  # AggregationResult (live mode)
+    ss.setdefault("production_result", None)  # P.ProductionPipelineResult (mock mode)
+    ss.setdefault("production_threshold", None)  # threshold_max last run
     ss.setdefault("prompt_template", G.DEFAULT_PROMPT_TEMPLATE)
     ss.setdefault("prompt_chat", [])  # list[{role, content}]
     ss.setdefault("program_chats", {})  # {program_id: list[{role, content}]}
     ss.setdefault("editing_program_id", None)
-    ss.setdefault("abstain_band", 0.15)
+    ss.setdefault("abstain_band", 0.14)
+    ss.setdefault("workflow_step", "setup")
+    ss.setdefault("program_search", "")
 
 
 init_state()
+
+WORKFLOW_STEPS = [
+    ("Start", "setup"),
+    ("Prompt", "prompt"),
+    ("Programs", "programs"),
+    ("Results", "results"),
+]
+
+_APPLE_CSS = """
+<style>
+    /* Hide sidebar — everything lives in the main canvas */
+    section[data-testid="stSidebar"], section[data-testid="stSidebarCollapsedControl"] {
+        display: none !important;
+    }
+    section.main .block-container,
+    [data-testid="stMainBlockContainer"] {
+        padding-top: 1.75rem !important;
+        max-width: 46rem !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        overflow: visible !important;
+    }
+    section.main [data-testid="stVerticalBlock"],
+    section.main [data-testid="stMarkdownContainer"],
+    section.main [data-testid="stMarkdown"] {
+        overflow: visible !important;
+    }
+    div[data-testid="stMarkdownContainer"]:has(.pajama-hero),
+    div[data-testid="stMarkdown"]:has(.pajama-hero),
+    .pajama-hero-outer {
+        background: transparent !important;
+        overflow: visible !important;
+        padding-top: 2px;
+    }
+    .pajama-hero {
+        background: linear-gradient(135deg, #f5f7ff 0%, #ffffff 55%, #f9fafb 100%);
+        border: 1px solid #e8ecf4;
+        border-radius: 20px !important;
+        padding: 1.25rem 1.5rem;
+        margin: 0.25rem 0 1rem 0;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    }
+    .pajama-hero h1 { font-size: 1.65rem; font-weight: 650; letter-spacing: -0.02em; margin: 0; }
+    .pajama-hero p { color: #6b7280; margin: 0.35rem 0 0 0; font-size: 0.95rem; }
+    .step-rail {
+        display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.75rem 0 1.25rem 0;
+    }
+    .step-pill {
+        padding: 0.45rem 1rem; border-radius: 999px; font-size: 0.88rem; font-weight: 500;
+        border: 1px solid #e5e7eb; background: #fff; color: #6b7280;
+    }
+    .step-pill.active {
+        background: #007aff; border-color: #007aff; color: #fff;
+        box-shadow: 0 4px 14px rgba(0, 122, 255, 0.25);
+    }
+    .card-panel {
+        background: #fff; border: 1px solid #e8ecf4; border-radius: 16px;
+        padding: 1.25rem 1.35rem; margin-bottom: 1rem;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    }
+    .card-panel h3 { margin: 0 0 0.35rem 0; font-size: 1.05rem; font-weight: 600; }
+    .card-panel .sub { color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem; }
+    .prog-table-head {
+        font-size: 0.78rem; font-weight: 600; color: #9ca3af;
+        text-transform: uppercase; letter-spacing: 0.04em;
+        padding: 0.35rem 0 0.5rem 0; border-bottom: 1px solid #eef0f4;
+    }
+    .prog-row {
+        padding: 0.4rem 0; border-bottom: 1px solid #f3f4f6;
+        align-items: center;
+    }
+    div[data-testid="stDialog"] {
+        border-radius: 18px !important;
+        box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18) !important;
+    }
+</style>
+"""
+
+
+def _inject_app_css() -> None:
+    st.markdown(_APPLE_CSS, unsafe_allow_html=True)
+
+
+def _render_app_header() -> None:
+    icon_html = (
+        f'<img src="{ICON_DATA_URI}" width="32" height="32" style="border-radius:8px;" />'
+        if ICON_DATA_URI
+        else ""
+    )
+    st.markdown(
+        f"""
+        <div class="pajama-hero-outer">
+          <div class="pajama-hero">
+            <div style="display:flex;align-items:center;gap:12px;">
+              {icon_html}
+              <div>
+                <h1>PAJAMA Workflow</h1>
+                <p>Programmatic judges for pairwise preferences.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_step_nav() -> None:
+    step = st.session_state.workflow_step
+    cols = st.columns(len(WORKFLOW_STEPS))
+    for i, (label, key) in enumerate(WORKFLOW_STEPS):
+        with cols[i]:
+            if st.button(
+                label,
+                key=f"nav_{key}",
+                use_container_width=True,
+                type="primary" if key == step else "secondary",
+            ):
+                st.session_state.workflow_step = key
+                st.rerun()
+
+    idx = next(i for i, (_, k) in enumerate(WORKFLOW_STEPS) if k == step)
+    has_back = idx > 0
+    has_continue = idx < len(WORKFLOW_STEPS) - 1
+
+    if has_back and has_continue:
+        nav_l, nav_r = st.columns(2)
+        with nav_l:
+            if st.button("← Back", use_container_width=True):
+                st.session_state.workflow_step = WORKFLOW_STEPS[idx - 1][1]
+                st.rerun()
+        with nav_r:
+            if st.button("Continue →", use_container_width=True):
+                st.session_state.workflow_step = WORKFLOW_STEPS[idx + 1][1]
+                st.rerun()
+    elif has_back:
+        if st.button("← Back", use_container_width=True):
+            st.session_state.workflow_step = WORKFLOW_STEPS[idx - 1][1]
+            st.rerun()
+    elif has_continue:
+        if st.button("Continue →", use_container_width=True):
+            st.session_state.workflow_step = WORKFLOW_STEPS[idx + 1][1]
+            st.rerun()
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -132,6 +281,8 @@ def _bootstrap_mock():
     st.session_state.rows_source = f"mock: judgelm sample ({len(rows)} samples)"
     st.session_state.programs = progs
     st.session_state.aggregation = None
+    st.session_state.production_result = None
+    st.session_state.production_threshold = None
 
 
 def _selected_programs():
@@ -140,16 +291,105 @@ def _selected_programs():
     return [p for p in st.session_state.programs if p.selected and p.fn is not None]
 
 
-def _heuristic_label(p: P.Program) -> str:
-    if p.heuristic_name:
-        return f"H{p.heuristic_id}: {p.heuristic_name}"
-    return "—"
+def _run_mock_production_pipeline(
+    threshold_max: float,
+    progress_callback=None,
+) -> P.ProductionPipelineResult | None:
+    """Execute production pipeline, persist summary under demo/outputs/."""
+    arrays = P.load_demo_val_arrays(DEMO_OUTPUTS)
+    if arrays is None:
+        return None
+    val_s1, val_s2, y_val = arrays
+    result = P.run_from_cached_scores(
+        val_s1,
+        val_s2,
+        y_val,
+        threshold_max=float(threshold_max),
+        progress_callback=progress_callback,
+    )
+    P.save_summary(result.summary, DEMO_PIPELINE_SUMMARY)
+    st.session_state.production_result = result
+    st.session_state.production_threshold = float(threshold_max)
+    st.session_state.aggregation = None
+    return result
 
 
-def _format_program_card(p: P.Program) -> str:
-    h = _heuristic_label(p)
-    summary = p.approach_summary or G.summarize_approach(p.code)
-    return f"**{p.display_name}** &nbsp;·&nbsp; {h} &nbsp;·&nbsp; *variant {p.variant or '?'}*  \n`{summary}`"
+def _pipeline_threshold_stale() -> bool:
+    """True when the slider value differs from the last pipeline run."""
+    pipe = st.session_state.production_result
+    if pipe is None:
+        return False
+    last = st.session_state.production_threshold
+    if last is None:
+        return True
+    return abs(float(last) - float(st.session_state.abstain_band)) > 1e-9
+
+
+def _mock_pipeline_ready() -> bool:
+    return P.load_demo_val_arrays(DEMO_OUTPUTS) is not None
+
+
+def _render_fixed_bar_chart(
+    series: pd.Series,
+    *,
+    height: int = 420,
+    y_max: float | None = None,
+) -> None:
+    """Fixed-size bar chart matching Streamlit default blue; no zoom/resize on scroll."""
+    import plotly.graph_objects as go
+
+    if len(series) == 0:
+        st.caption("(no data)")
+        return
+
+    y_vals = series.values.astype(float)
+    x_vals = [str(x) for x in series.index]
+    ymax = float(y_max) if y_max is not None else float(y_vals.max()) * 1.08
+    ymax = max(ymax, 0.01)
+
+    fig = go.Figure(
+        go.Bar(
+            x=x_vals,
+            y=y_vals,
+            marker=dict(color="#0068C9", line=dict(width=0)),
+        )
+    )
+    fig.update_layout(
+        height=height,
+        width=320,
+        autosize=False,
+        margin=dict(l=44, r=8, t=8, b=100),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        bargap=0.2,
+        dragmode=False,
+        hovermode="x",
+        xaxis=dict(
+            tickangle=-90,
+            fixedrange=True,
+            showline=False,
+            tickfont=dict(size=9),
+        ),
+        yaxis=dict(
+            range=[0, ymax],
+            fixedrange=True,
+            showgrid=True,
+            gridcolor="rgba(150,150,150,0.25)",
+            showline=False,
+            zeroline=False,
+        ),
+    )
+    st.plotly_chart(
+        fig,
+        use_container_width=False,
+        config={
+            "scrollZoom": False,
+            "displayModeBar": False,
+            "doubleClick": False,
+            "displaylogo": False,
+            "responsive": False,
+        },
+    )
 
 
 def _score_with_programs(rows, programs, progress_text="Scoring"):
@@ -158,16 +398,16 @@ def _score_with_programs(rows, programs, progress_text="Scoring"):
         st.session_state.mode == "mock"
         and st.session_state.orig_indices is not None
         and all(i >= 0 for i in st.session_state.orig_indices)
-        and MOCK_CACHED_S1.exists()
-        and MOCK_CACHED_S2.exists()
+        and DEMO_TEST_S1.exists()
+        and DEMO_TEST_S2.exists()
         and len(programs) == 80
         and all(p.program_id == i + 1 for i, p in enumerate(programs))
         and not any(p.dirty for p in programs)
     )
     if use_cache:
         idx = np.asarray(st.session_state.orig_indices, dtype=int)
-        s1_full = np.load(MOCK_CACHED_S1)
-        s2_full = np.load(MOCK_CACHED_S2)
+        s1_full = np.load(DEMO_TEST_S1)
+        s2_full = np.load(DEMO_TEST_S2)
         # cached arrays are aligned: column j -> judge_(j+1). Pick selected columns.
         cols = [p.program_id - 1 for p in programs]
         s1 = s1_full[idx][:, cols]
@@ -184,386 +424,355 @@ def _score_with_programs(rows, programs, progress_text="Scoring"):
     return s1, s2
 
 
-# ── Sidebar ─────────────────────────────────────────────────────────────
-with st.sidebar:
-    if ICON_DATA_URI:
-        st.markdown(
-            f"""
-            <h1 style="display:flex;align-items:center;gap:10px;margin:0 0 0.25rem 0;">
-                <img src="{ICON_DATA_URI}" width="36" height="36" style="vertical-align:middle;" alt="pajamas icon"/>
-                <span>PAJAMA Workflow</span>
-            </h1>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.title("PAJAMA Workflow")
-    st.caption("Programmatic Judge for Pairwise Preferences.")
+# ── Dialogs (Edit / Chat pop-ups) ─────────────────────────────────────────
 
-    st.subheader("1 · Mode")
+
+@st.dialog("Edit judge program", width="large")
+def _program_edit_dialog(program_id: int) -> None:
+    progs = st.session_state.programs or []
+    p = next((x for x in progs if x.program_id == program_id), None)
+    if p is None:
+        st.warning("Program not found.")
+        return
+
+    h_meta = G.HEURISTICS.get(p.heuristic_id or 0, {})
+    st.caption(
+        f"{p.display_name} · {h_meta.get('name', '—')} · variant {p.variant or '?'}"
+    )
+    new_code = st.text_area("Python code", value=p.code, height=360, label_visibility="collapsed")
+    s1, s2, s3 = st.columns(3)
+    with s1:
+        if st.button("Save", type="primary", use_container_width=True):
+            if new_code != p.code:
+                p.dirty = True
+            p.code = new_code
+            try:
+                p.fn = P.compile_program(new_code)
+                p.status = "success"
+                p.approach_summary = G.summarize_approach(new_code)
+                st.session_state.aggregation = None
+                st.session_state.production_result = None
+                st.success("Saved.")
+            except Exception as e:
+                p.fn = None
+                p.status = f"compile_error: {e}"
+                st.error(str(e))
+    with s2:
+        if st.button("Recompile", use_container_width=True):
+            try:
+                p.fn = P.compile_program(p.code)
+                p.status = "success"
+                st.success("OK")
+            except Exception as e:
+                p.fn = None
+                st.error(str(e))
+    with s3:
+        if st.button("Close", use_container_width=True):
+            st.rerun()
+
+
+@st.dialog("Chat with Claude", width="large")
+def _program_chat_dialog(program_id: int) -> None:
+    progs = st.session_state.programs or []
+    p = next((x for x in progs if x.program_id == program_id), None)
+    if p is None:
+        return
+
+    if st.session_state.mode != "live" or not st.session_state.api_key:
+        st.info("Switch to **Live** mode on the Start step and add your API key to use chat.")
+        if st.button("Close"):
+            st.rerun()
+        return
+
+    st.session_state.program_chats.setdefault(program_id, [])
+    history = st.session_state.program_chats[program_id]
+
+    with st.container(height=320, border=False):
+        for turn in history:
+            with st.chat_message(turn["role"]):
+                st.markdown(turn["content"])
+
+    user_msg = st.chat_input("Ask Claude to improve this judge…")
+    if user_msg:
+        history.append({"role": "user", "content": user_msg})
+        try:
+            with st.spinner("Thinking…"):
+                reply, new_code = G.chat_regenerate(
+                    current_code=p.code,
+                    user_message=user_msg,
+                    history=history[:-1],
+                    api_key=st.session_state.api_key,
+                )
+            history.append({"role": "assistant", "content": reply})
+            if new_code:
+                st.session_state[f"_pending_code_{program_id}"] = new_code
+        except Exception as e:
+            history.append({"role": "assistant", "content": f"Error: {e}"})
+        st.rerun()
+
+    pending = st.session_state.get(f"_pending_code_{program_id}")
+    if pending:
+        st.code(pending[:2500] + ("…" if len(pending) > 2500 else ""), language="python")
+        a, b = st.columns(2)
+        with a:
+            if st.button("Use this code", type="primary", use_container_width=True):
+                try:
+                    p.code = pending
+                    p.fn = P.compile_program(pending)
+                    p.status = "success"
+                    p.dirty = True
+                    p.approach_summary = G.summarize_approach(pending)
+                    st.session_state.pop(f"_pending_code_{program_id}", None)
+                    st.session_state.aggregation = None
+                    st.success("Updated.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+        with b:
+            if st.button("Discard", use_container_width=True):
+                st.session_state.pop(f"_pending_code_{program_id}", None)
+                st.rerun()
+
+
+def _render_step_setup() -> None:
+    st.markdown(
+        """
+        <div class="card-panel">
+          <h3>How do you want to run PAJAMA?</h3>
+          <p class="sub">Pick a mode, load your data, then tap <strong>Continue</strong> to move on.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     mode = st.radio(
         "Mode",
         options=["mock", "live"],
-        format_func=lambda x: "Mock (judgelm sample + cached scores)"
-        if x == "mock"
-        else "Live (call Claude + score uploaded data)",
+        format_func=lambda x: (
+            "Demo — try instantly with a sample dataset (recommended)"
+            if x == "mock"
+            else "Live — use your own data and Claude API"
+        ),
         index=0 if st.session_state.mode == "mock" else 1,
         label_visibility="collapsed",
     )
     st.session_state.mode = mode
 
-    if mode == "live":
-        api_key_input = st.text_input(
-            "ANTHROPIC_API_KEY",
+    if mode == "mock":
+        st.markdown(
+            '<div class="card-panel"><h3>Load sample data</h3>'
+            '<p class="sub">50 example pairs + 80 pre-built judges (no API key needed).</p></div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("Load sample dataset", type="primary", use_container_width=True):
+            _bootstrap_mock()
+            st.success("Ready — 50 samples and 80 judges loaded.")
+            st.rerun()
+    else:
+        st.markdown(
+            '<div class="card-panel"><h3>Your API key</h3>'
+            '<p class="sub">Required to generate and chat with judges.</p></div>',
+            unsafe_allow_html=True,
+        )
+        st.session_state.api_key = st.text_input(
+            "Anthropic API key",
             value=st.session_state.api_key,
             type="password",
-            help="Used for program generation and per-program chat.",
+            label_visibility="collapsed",
         )
-        st.session_state.api_key = api_key_input
-        if not api_key_input:
-            st.warning("Set the API key to enable generation / chat.")
-
-    st.subheader("2 · Dataset")
-    if mode == "mock":
-        if st.button(f"Load judgelm sample ({MOCK_SAMPLE_SIZE} samples)", use_container_width=True):
-            _bootstrap_mock()
-            st.success("Mock dataset + 80 cached programs loaded.")
-    else:
         uploaded = st.file_uploader(
-            "Upload JSONL with `query`, `response1`, `response2` "
-            "(optional `verdict` for few-shot)",
+            "Upload JSONL (query, response1, response2)",
             type=["jsonl", "json"],
+            label_visibility="collapsed",
         )
-        if uploaded is not None and st.button("Use uploaded data", use_container_width=True):
+        if uploaded is not None and st.button("Use this file", use_container_width=True):
             text = uploaded.read().decode("utf-8")
             rows = [json.loads(line) for line in text.splitlines() if line.strip()]
             st.session_state.rows = rows
             st.session_state.orig_indices = None
             st.session_state.rows_source = f"uploaded: {uploaded.name} ({len(rows)} samples)"
             st.session_state.aggregation = None
+            st.session_state.production_result = None
             st.success(f"Loaded {len(rows)} samples.")
+            st.rerun()
 
     if st.session_state.rows is not None:
-        st.caption(f"📁 {st.session_state.rows_source}")
+        n = len(st.session_state.rows)
+        st.success(f"Dataset ready — {n} pairwise samples ({st.session_state.rows_source}).")
+        with st.expander("Preview data"):
+            preview = pd.DataFrame(
+                [
+                    {
+                        "query": str(r.get("query", ""))[:100],
+                        "response1": str(r.get("response1", ""))[:80],
+                        "response2": str(r.get("response2", ""))[:80],
+                    }
+                    for r in st.session_state.rows[:15]
+                ]
+            )
+            st.dataframe(preview, use_container_width=True, hide_index=True)
 
-    st.subheader("3 · Programs")
-    if mode == "mock":
-        if st.button("Reload mock programs", use_container_width=True):
-            st.session_state.programs = _load_mock_programs()
-            st.session_state.aggregation = None
-    else:
-        st.caption(
-            "Click **Generate 80 programs** on the Programs tab once your dataset is loaded."
-        )
 
-    st.subheader("4 · Aggregation")
-    st.session_state.abstain_band = st.slider(
-        "Abstain threshold (|diff| ≤ threshold → abstain)",
-        min_value=0.00,
-        max_value=0.50,
-        value=float(st.session_state.abstain_band),
-        step=0.01,
-        help="Width of the no-confidence threshold around 0 used to decide abstention.",
+def _render_step_prompt() -> None:
+    st.markdown(
+        """
+        <div class="card-panel">
+          <h3>Prompt template</h3>
+          <p class="sub">Instructions sent to Claude when creating each judge. Advanced users can edit placeholders.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-
-    st.markdown("---")
-    n_progs = len(st.session_state.programs) if st.session_state.programs else 0
-    n_sel = len(_selected_programs())
-    n_rows = len(st.session_state.rows) if st.session_state.rows else 0
-    st.caption(f"**State:** {n_rows} samples · {n_sel}/{n_progs} programs selected")
-
-
-# ── Main ────────────────────────────────────────────────────────────────
-st.title("PAJAMA Workflow")
-st.caption(
-    "Generate programmatic judges → aggregate with Snorkel → download labeled preference data."
-)
-
-tab_data, tab_programs, tab_prompt, tab_agg, tab_results = st.tabs(
-    ["📥 Data", "🧮 Programs", "💬 Prompt", "📊 Aggregation", "📤 Results"]
-)
-
-
-# ── Tab: Data ───────────────────────────────────────────────────────────
-with tab_data:
-    if st.session_state.rows is None:
-        st.info("Load a dataset from the sidebar to get started.")
-    else:
-        rows = st.session_state.rows
-        st.markdown(f"### {len(rows)} pairwise comparisons")
-        st.caption(st.session_state.rows_source)
-
-        preview_df = pd.DataFrame(
-            [
-                {
-                    "i": i,
-                    "query": str(r.get("query", ""))[:140],
-                    "response1": str(r.get("response1", ""))[:140],
-                    "response2": str(r.get("response2", ""))[:140],
-                    "verdict": r.get("verdict", "—"),
-                }
-                for i, r in enumerate(rows)
-            ]
-        )
-        st.dataframe(preview_df, use_container_width=True, hide_index=True)
-
-        with st.expander("Schema check"):
-            keys = sorted({k for r in rows[:10] for k in r.keys()})
-            required = {"query", "response1", "response2"}
-            missing = required - set(keys)
+    template = st.text_area(
+        "Template",
+        value=st.session_state.prompt_template,
+        height=380,
+        label_visibility="collapsed",
+    )
+    b1, b2 = st.columns(2)
+    with b1:
+        if st.button("Save template", type="primary", use_container_width=True):
+            required = {
+                "{heuristic_name}",
+                "{heuristic_description}",
+                "{avoid_block}",
+                "{variant}",
+                "{few_shot_text}",
+            }
+            missing = [p for p in required if p not in template]
             if missing:
-                st.error(f"Missing required fields: {missing}")
+                st.error(f"Missing placeholders: {missing}")
             else:
-                st.success("All required fields present.")
-            st.write({"fields_seen": keys})
+                st.session_state.prompt_template = template
+                st.success("Saved.")
+    with b2:
+        if st.button("Reset to default", use_container_width=True):
+            st.session_state.prompt_template = G.DEFAULT_PROMPT_TEMPLATE
+            st.rerun()
+
+    if st.session_state.mode == "live" and st.session_state.api_key:
+        st.markdown("##### Refine template with Claude")
+        for turn in st.session_state.prompt_chat:
+            with st.chat_message(turn["role"]):
+                st.markdown(turn["content"])
+        user_q = st.chat_input("Ask Claude to improve the template…")
+        if user_q:
+            st.session_state.prompt_chat.append({"role": "user", "content": user_q})
+            try:
+                with st.spinner("Thinking…"):
+                    reply, new_template = G.chat_refine_prompt(
+                        current_template=st.session_state.prompt_template,
+                        user_message=user_q,
+                        history=st.session_state.prompt_chat[:-1],
+                        api_key=st.session_state.api_key,
+                    )
+                st.session_state.prompt_chat.append({"role": "assistant", "content": reply})
+                if new_template:
+                    st.session_state["_pending_prompt"] = new_template
+            except Exception as e:
+                st.session_state.prompt_chat.append({"role": "assistant", "content": str(e)})
+            st.rerun()
+        pending = st.session_state.get("_pending_prompt")
+        if pending:
+            if st.button("Use proposed template", type="primary"):
+                st.session_state.prompt_template = pending
+                st.session_state.pop("_pending_prompt", None)
+                st.rerun()
 
 
-# ── Tab: Programs ───────────────────────────────────────────────────────
-def render_programs_tab():
+def _render_step_programs() -> None:
     progs = st.session_state.programs
 
-    col1, col2, col3, col4 = st.columns([1.3, 1, 1, 1])
-    with col1:
-        gen_disabled = (
-            st.session_state.mode != "live"
-            or not st.session_state.api_key
-            or st.session_state.rows is None
-        )
-        if st.button(
-            "✨ Generate 80 programs (live)",
-            disabled=gen_disabled,
-            use_container_width=True,
-            help="Calls Claude Opus 4.6 for all 80 slots. Requires API key + uploaded data.",
-        ):
-            _run_full_generation()
+    st.markdown(
+        """
+        <div class="card-panel">
+          <h3>Your 80 judges</h3>
+          <p class="sub">Each row is one program. Use Edit, Chat, or Delete — one judge at a time.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with col2:
-        if st.button("Select all", disabled=progs is None, use_container_width=True):
+    tb1, tb2, tb3, tb4 = st.columns(4)
+    with tb1:
+        gen_ok = (
+            st.session_state.mode == "live"
+            and st.session_state.api_key
+            and st.session_state.rows is not None
+        )
+        if st.button("Generate 80 judges", disabled=not gen_ok, use_container_width=True):
+            _run_full_generation()
+            st.rerun()
+    with tb2:
+        if st.button("Reload (demo)", disabled=st.session_state.mode != "mock", use_container_width=True):
+            st.session_state.programs = _load_mock_programs()
+            st.session_state.production_result = None
+            st.rerun()
+    with tb3:
+        if st.button("Select all", disabled=not progs, use_container_width=True):
             for p in progs:
                 p.selected = True
             st.session_state.aggregation = None
-
-    with col3:
-        if st.button("Deselect all", disabled=progs is None, use_container_width=True):
+    with tb4:
+        if st.button("Deselect all", disabled=not progs, use_container_width=True):
             for p in progs:
                 p.selected = False
             st.session_state.aggregation = None
 
-    with col4:
-        if st.button(
-            "Validate all (recompile)",
-            disabled=progs is None,
-            use_container_width=True,
-        ):
-            ok, fail = 0, 0
-            for p in progs:
-                try:
-                    p.fn = P.compile_program(p.code)
-                    p.status = "success"
-                    ok += 1
-                except Exception as e:
-                    p.fn = None
-                    p.status = f"compile_error: {e}"
-                    fail += 1
-            st.toast(f"Recompiled — {ok} ok, {fail} broken.")
-
-    if progs is None:
-        st.info("Load programs from the sidebar (mock mode) or generate them (live mode).")
+    if not progs:
+        st.info("Load sample data on the **Start** step, or generate judges in Live mode.")
         return
 
-    # Per-heuristic grid layout
-    by_heuristic: dict[int, list[P.Program]] = {}
-    for p in progs:
-        by_heuristic.setdefault(p.heuristic_id or 0, []).append(p)
-
-    heuristic_filter = st.multiselect(
-        "Filter by heuristic",
-        options=sorted(by_heuristic),
-        default=sorted(by_heuristic),
-        format_func=lambda h: (
-            f"H{h}: {G.HEURISTICS.get(h, {}).get('name', 'unknown')}"
-            if h in G.HEURISTICS
-            else f"H{h}"
-        ),
+    st.session_state.program_search = st.text_input(
+        "Search judges",
+        value=st.session_state.program_search,
+        placeholder="e.g. judge_12",
+        label_visibility="collapsed",
     )
+    q = st.session_state.program_search.strip().lower()
+    filtered = [
+        p for p in sorted(progs, key=lambda x: x.program_id)
+        if not q or q in p.display_name.lower() or q in str(p.program_id)
+    ]
 
-    for h_id in sorted(heuristic_filter):
-        group = by_heuristic[h_id]
-        h_meta = G.HEURISTICS.get(h_id, {})
-        st.markdown(
-            f"#### H{h_id} · {h_meta.get('name', 'unknown')}  "
-            f"<span style='color:#888'>({len(group)} programs)</span>",
-            unsafe_allow_html=True,
-        )
-        cols = st.columns(4)
-        for idx, p in enumerate(group):
-            with cols[idx % 4]:
-                _render_program_card(p)
-        st.markdown("---")
+    with st.container(height=480, border=True):
+        h0, h1, h2, h3 = st.columns([2.5, 1, 1, 1])
+        with h0:
+            st.caption("**judge_id**")
+        with h1:
+            st.caption("**Edit**")
+        with h2:
+            st.caption("**Chat**")
+        with h3:
+            st.caption("**Delete**")
 
-    # Per-program editor (rendered below the grid)
-    if st.session_state.editing_program_id is not None:
-        _render_program_editor(st.session_state.editing_program_id)
-
-
-def _render_program_card(p: P.Program):
-    summary = p.approach_summary or G.summarize_approach(p.code)
-    status_emoji = "🟢" if p.fn is not None else "🔴"
-    with st.container(border=True):
-        top1, top2 = st.columns([3, 1])
-        with top1:
-            st.markdown(f"**{status_emoji} {p.display_name}** · *v{p.variant or '?'}*")
-            st.caption(summary)
-        with top2:
-            new_sel = st.checkbox(
-                "use",
-                value=p.selected,
-                key=f"sel_{p.program_id}",
-                label_visibility="collapsed",
-            )
-            if new_sel != p.selected:
-                p.selected = new_sel
-                st.session_state.aggregation = None
-
-        b1, b2, b3 = st.columns(3)
-        with b1:
-            if st.button("View / Edit", key=f"edit_{p.program_id}", use_container_width=True):
-                st.session_state.editing_program_id = p.program_id
-        with b2:
-            if st.button("💬 Chat", key=f"chat_{p.program_id}", use_container_width=True):
-                st.session_state.editing_program_id = p.program_id
-                st.session_state[f"_open_chat_{p.program_id}"] = True
-        with b3:
-            if st.button("🗑️", key=f"del_{p.program_id}", use_container_width=True):
-                st.session_state.programs = [
-                    x for x in st.session_state.programs if x.program_id != p.program_id
-                ]
-                st.session_state.aggregation = None
-                st.toast(f"Removed {p.display_name}")
-                st.rerun()
-
-
-def _render_program_editor(program_id: int):
-    progs = st.session_state.programs
-    p = next((x for x in progs if x.program_id == program_id), None)
-    if p is None:
-        st.session_state.editing_program_id = None
-        return
-
-    st.markdown(f"## ✏️ Editing `{p.display_name}`")
-    h_meta = G.HEURISTICS.get(p.heuristic_id or 0, {})
-    st.caption(
-        f"**Heuristic:** H{p.heuristic_id} · {h_meta.get('name', 'unknown')} · "
-        f"variant {p.variant or '?'}"
-    )
-    st.caption(f"**Approach tags:** `{p.approach_summary or G.summarize_approach(p.code)}`")
-
-    col_code, col_chat = st.columns([1.2, 1])
-
-    with col_code:
-        new_code = st.text_area(
-            "Program source",
-            value=p.code,
-            height=500,
-            key=f"code_{p.program_id}",
-        )
-        save, recompile, close = st.columns(3)
-        with save:
-            if st.button("💾 Save", key=f"save_{p.program_id}", use_container_width=True):
-                if new_code != p.code:
-                    p.dirty = True
-                p.code = new_code
-                try:
-                    p.fn = P.compile_program(new_code)
-                    p.status = "success"
-                    p.approach_summary = G.summarize_approach(new_code)
+        for p in filtered:
+            ok = p.fn is not None
+            c0, c1, c2, c3 = st.columns([2.5, 1, 1, 1])
+            with c0:
+                dot = "●" if ok else "○"
+                color = "#34c759" if ok else "#ff3b30"
+                st.markdown(
+                    f'<span style="color:{color};font-size:0.65rem;">{dot}</span> '
+                    f"**{p.display_name}**",
+                    unsafe_allow_html=True,
+                )
+            with c1:
+                if st.button("Edit", key=f"edit_{p.program_id}", use_container_width=True):
+                    _program_edit_dialog(p.program_id)
+            with c2:
+                if st.button("Chat", key=f"chat_{p.program_id}", use_container_width=True):
+                    _program_chat_dialog(p.program_id)
+            with c3:
+                if st.button("Delete", key=f"del_{p.program_id}", use_container_width=True):
+                    st.session_state.programs = [
+                        x for x in st.session_state.programs if x.program_id != p.program_id
+                    ]
                     st.session_state.aggregation = None
-                    st.success("Saved.")
-                except Exception as e:
-                    p.fn = None
-                    p.status = f"compile_error: {e}"
-                    st.error(f"Compile error: {e}")
-        with recompile:
-            if st.button("🔄 Recompile", key=f"recompile_{p.program_id}", use_container_width=True):
-                try:
-                    p.fn = P.compile_program(p.code)
-                    p.status = "success"
-                    st.success("Compiled.")
-                except Exception as e:
-                    p.fn = None
-                    p.status = f"compile_error: {e}"
-                    st.error(f"Compile error: {e}")
-        with close:
-            if st.button("Close editor", key=f"close_{p.program_id}", use_container_width=True):
-                st.session_state.editing_program_id = None
-                st.rerun()
-
-    with col_chat:
-        st.markdown("##### 💬 Chat to refine this program")
-        if st.session_state.mode != "live" or not st.session_state.api_key:
-            st.info("Set ANTHROPIC_API_KEY and switch to Live mode to chat.")
-        chat_key = f"chat_{p.program_id}"
-        st.session_state.program_chats.setdefault(p.program_id, [])
-        history = st.session_state.program_chats[p.program_id]
-
-        with st.container(height=380, border=True):
-            for turn in history:
-                with st.chat_message(turn["role"]):
-                    st.markdown(turn["content"])
-
-        user_msg = st.chat_input(
-            "Ask Claude to refine this program (e.g. 'add bigram overlap')",
-            key=f"chatin_{p.program_id}",
-            disabled=(st.session_state.mode != "live" or not st.session_state.api_key),
-        )
-        if user_msg:
-            history.append({"role": "user", "content": user_msg})
-            try:
-                with st.spinner("Thinking..."):
-                    reply, new_code = G.chat_regenerate(
-                        current_code=p.code,
-                        user_message=user_msg,
-                        history=history[:-1],
-                        api_key=st.session_state.api_key,
-                    )
-                history.append({"role": "assistant", "content": reply})
-                if new_code:
-                    st.session_state[f"_pending_code_{p.program_id}"] = new_code
-            except Exception as e:
-                history.append({"role": "assistant", "content": f"⚠️ Error: {e}"})
-            st.rerun()
-
-        pending = st.session_state.get(f"_pending_code_{p.program_id}")
-        if pending:
-            st.markdown("**Claude proposed a new version:**")
-            st.code(pending[:2000] + ("..." if len(pending) > 2000 else ""), language="python")
-            ca, cb = st.columns(2)
-            with ca:
-                if st.button(
-                    "✅ Accept proposed code",
-                    key=f"accept_{p.program_id}",
-                    use_container_width=True,
-                ):
-                    try:
-                        new_fn = P.compile_program(pending)
-                        p.code = pending
-                        p.fn = new_fn
-                        p.status = "success"
-                        p.dirty = True
-                        p.approach_summary = G.summarize_approach(pending)
-                        st.session_state.pop(f"_pending_code_{p.program_id}", None)
-                        st.session_state.aggregation = None
-                        st.success("Accepted.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Compile error in proposed code: {e}")
-            with cb:
-                if st.button("✖️ Discard", key=f"discard_{p.program_id}", use_container_width=True):
-                    st.session_state.pop(f"_pending_code_{p.program_id}", None)
                     st.rerun()
 
 
-def _run_full_generation():
+def _run_full_generation() -> None:
     """Generate 80 programs end-to-end via Claude (live mode)."""
     rows = st.session_state.rows
     if not rows:
@@ -574,7 +783,7 @@ def _run_full_generation():
     h_approaches: dict[int, list[str]] = {h: [] for h in G.HEURISTICS}
     pid = 0
     plan = [(h, v) for h in G.HEURISTICS for v in range(1, 9)]
-    bar = st.progress(0.0, text="Generating programs…")
+    bar = st.progress(0.0, text="Generating judges…")
     for k, (h_id, variant) in enumerate(plan):
         pid += 1
         try:
@@ -620,296 +829,206 @@ def _run_full_generation():
                     fn=None,
                 )
             )
-        bar.progress((k + 1) / len(plan), text=f"Generating programs… {k+1}/{len(plan)}")
+        bar.progress((k + 1) / len(plan), text=f"Generating… {k + 1}/{len(plan)}")
     bar.empty()
     st.session_state.programs = progs
     st.session_state.aggregation = None
-    st.success(f"Generated {len(progs)} programs.")
+    st.success(f"Generated {len(progs)} judges.")
 
 
-with tab_programs:
-    render_programs_tab()
-
-
-# ── Tab: Prompt ─────────────────────────────────────────────────────────
-with tab_prompt:
-    st.markdown("### Global generation prompt template")
-    st.caption(
-        "This template is used for all 80 generation calls. "
-        "Required placeholders: `{heuristic_name}`, `{heuristic_description}`, "
-        "`{avoid_block}`, `{variant}`, `{few_shot_text}`."
-    )
-    template = st.text_area(
-        "Template",
-        value=st.session_state.prompt_template,
-        height=450,
-        key="prompt_template_box",
-    )
-    save_p, reset_p = st.columns(2)
-    with save_p:
-        if st.button("💾 Save template", use_container_width=True):
-            required = {
-                "{heuristic_name}",
-                "{heuristic_description}",
-                "{avoid_block}",
-                "{variant}",
-                "{few_shot_text}",
-            }
-            missing = [p for p in required if p not in template]
-            if missing:
-                st.error(f"Template missing required placeholders: {missing}")
-            else:
-                st.session_state.prompt_template = template
-                st.success("Saved.")
-    with reset_p:
-        if st.button("↺ Reset to default", use_container_width=True):
-            st.session_state.prompt_template = G.DEFAULT_PROMPT_TEMPLATE
-            st.rerun()
-
-    st.markdown("### 💬 Chat with Claude to refine the prompt")
-    if st.session_state.mode != "live" or not st.session_state.api_key:
-        st.info("Live mode + API key required to use the prompt-refinement chat.")
-    with st.container(height=300, border=True):
-        for turn in st.session_state.prompt_chat:
-            with st.chat_message(turn["role"]):
-                st.markdown(turn["content"])
-    user_q = st.chat_input(
-        "Ask Claude to refine the prompt template",
-        disabled=(st.session_state.mode != "live" or not st.session_state.api_key),
-    )
-    if user_q:
-        st.session_state.prompt_chat.append({"role": "user", "content": user_q})
-        try:
-            with st.spinner("Thinking..."):
-                reply, new_template = G.chat_refine_prompt(
-                    current_template=st.session_state.prompt_template,
-                    user_message=user_q,
-                    history=st.session_state.prompt_chat[:-1],
-                    api_key=st.session_state.api_key,
-                )
-            st.session_state.prompt_chat.append({"role": "assistant", "content": reply})
-            if new_template:
-                st.session_state["_pending_prompt"] = new_template
-        except Exception as e:
-            st.session_state.prompt_chat.append(
-                {"role": "assistant", "content": f"⚠️ Error: {e}"}
-            )
-        st.rerun()
-    pending = st.session_state.get("_pending_prompt")
-    if pending:
-        st.markdown("**Claude proposed a new template:**")
-        st.code(pending, language="text")
-        ca, cb = st.columns(2)
-        with ca:
-            if st.button("✅ Use this template", use_container_width=True):
-                st.session_state.prompt_template = pending
-                st.session_state.pop("_pending_prompt", None)
-                st.rerun()
-        with cb:
-            if st.button("✖️ Discard proposal", use_container_width=True):
-                st.session_state.pop("_pending_prompt", None)
-                st.rerun()
-
-
-# ── Tab: Aggregation ────────────────────────────────────────────────────
-with tab_agg:
-    progs = _selected_programs()
+def _render_step_results() -> None:
     rows = st.session_state.rows
+    pipe = st.session_state.production_result
+    agg = st.session_state.aggregation
 
-    st.markdown("### Val-free Snorkel aggregation")
-    st.caption(
-        "Per-program robust normalization → diff → vote with abstain threshold → "
-        "fit LabelModel directly on all selected programs."
+    st.markdown(
+        """
+        <div class="card-panel">
+          <h3>Aggregate &amp; download labels</h3>
+          <p class="sub">Set how strict judges should be, run the pipeline, then review accuracy and predictions.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    c1, c2, c3 = st.columns([1, 1, 2])
-    with c1:
-        can_run = bool(progs) and bool(rows)
+    st.session_state.abstain_band = st.slider(
+        "Abstain threshold (max per-program tuning)",
+        min_value=0.0,
+        max_value=0.50,
+        value=float(st.session_state.abstain_band),
+        step=0.01,
+        help="Higher = more cautious judges. Default 0.14 for the demo.",
+    )
+
+    if st.session_state.mode == "mock":
+        c1, c2 = st.columns(2)
+        with c1:
+            run_pipeline = st.button(
+                "Run pipeline",
+                type="primary",
+                disabled=not _mock_pipeline_ready(),
+                use_container_width=True,
+            )
+        with c2:
+            if st.button("Clear results", disabled=pipe is None, use_container_width=True):
+                st.session_state.production_result = None
+                st.session_state.production_threshold = None
+                st.rerun()
+
+        progress_slot = st.empty()
+        if run_pipeline:
+            try:
+                progress_bar = progress_slot.progress(0.0, text="Starting…")
+
+                def _on_progress(frac: float, msg: str) -> None:
+                    progress_bar.progress(frac, text=msg)
+
+                t0 = time.time()
+                _run_mock_production_pipeline(
+                    float(st.session_state.abstain_band),
+                    progress_callback=_on_progress,
+                )
+                progress_bar.progress(1.0, text="Done.")
+                st.toast(f"Finished in {time.time()-t0:.1f}s")
+                st.rerun()
+            except Exception as e:
+                progress_slot.error(str(e))
+
+        if _pipeline_threshold_stale() and pipe is not None:
+            st.warning("Threshold changed — click **Run pipeline** to refresh.")
+
+        pipe = st.session_state.production_result
+        if pipe is not None:
+            vm = pipe.summary.get("LabelModel_val", {})
+            st.metric(
+                f"Agreement with gold ({vm.get('n_total', 500)} validation samples)",
+                f"{100 * vm.get('accuracy', 0):.1f}%",
+                help="Full validation set via production pipeline (cached scores).",
+            )
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Validation samples", vm.get("n_total", 500))
+            m2.metric("Agreement with gold", f"{100*vm.get('accuracy', 0):.1f}%")
+            m3.metric("Coverage", f"{100*vm.get('coverage', 0):.1f}%")
+            m4.metric("Judges used", pipe.summary.get("best_k", "—"))
+
+            st.markdown("##### Selected judges")
+            df = pd.DataFrame(
+                {
+                    "program": [f"judge_{pid}" for pid in pipe.selected_program_ids],
+                    "weight": pipe.weights.astype(float),
+                    "coverage": pipe.coverage.astype(float),
+                    "conflict": pipe.conflicts.astype(float),
+                }
+            )
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+            st.markdown("##### Charts")
+            cw, cc, cx = st.columns(3)
+            with cw:
+                _render_fixed_bar_chart(df.set_index("program")["weight"], height=320)
+            with cc:
+                _render_fixed_bar_chart(
+                    df.set_index("program")["coverage"], height=320, y_max=1.0
+                )
+            with cx:
+                _render_fixed_bar_chart(
+                    df.set_index("program")["conflict"], height=320, y_max=1.0
+                )
+    else:
+        sel = _selected_programs()
         if st.button(
-            "▶ Run aggregation",
-            disabled=not can_run,
-            use_container_width=True,
+            "Run aggregation",
             type="primary",
+            disabled=not (sel and rows),
+            use_container_width=True,
         ):
-            t0 = time.time()
-            s1, s2 = _score_with_programs(rows, progs, progress_text="Scoring rows")
-            with st.spinner("Fitting Snorkel LabelModel..."):
-                result = P.aggregate(
+            s1, s2 = _score_with_programs(rows, sel)
+            with st.spinner("Aggregating…"):
+                st.session_state.aggregation = P.aggregate(
                     s1=s1,
                     s2=s2,
-                    program_ids=[p.program_id for p in progs],
+                    program_ids=[p.program_id for p in sel],
                     abstain_band=float(st.session_state.abstain_band),
                 )
-            st.session_state.aggregation = result
-            st.toast(f"Aggregated in {time.time()-t0:.1f}s")
-    with c2:
-        if st.button("Clear", disabled=st.session_state.aggregation is None, use_container_width=True):
-            st.session_state.aggregation = None
+            st.session_state.production_result = None
             st.rerun()
-    with c3:
-        if not can_run:
-            st.caption("Need at least one selected program and a loaded dataset.")
+        agg = st.session_state.aggregation
+        if agg is not None:
+            st.metric("Coverage", f"{100*(agg.hard != -1).mean():.1f}%")
 
-    result = st.session_state.aggregation
-    if result is not None:
-        # ── Summary KPIs
-        n, m = result.M.shape
-        n_cov = int((result.hard != -1).sum())
-        st.markdown("---")
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Rows", n)
-        k2.metric("Programs (selected)", m)
-        k3.metric("Coverage", f"{100*n_cov/n:.1f}%")
-        k4.metric("Avg per-program coverage", f"{100*result.coverage.mean():.1f}%")
+    st.markdown("---")
+    st.markdown("##### Predictions on your loaded samples")
 
-        # ── Per-program metrics dataframe ── selected programs only
-        prog_lookup = {p.program_id: p for p in progs}
-        df = pd.DataFrame(
-            {
-                "program": [f"judge_{pid}" for pid in result.program_ids],
-                "heuristic": [
-                    f"H{prog_lookup[pid].heuristic_id}: {prog_lookup[pid].heuristic_name}"
-                    if prog_lookup[pid].heuristic_id
-                    else "—"
-                    for pid in result.program_ids
-                ],
-                "variant": [prog_lookup[pid].variant for pid in result.program_ids],
-                "logic_tags": [
-                    prog_lookup[pid].approach_summary
-                    or G.summarize_approach(prog_lookup[pid].code)
-                    for pid in result.program_ids
-                ],
-                "weight": result.weights.astype(float),
-                "coverage": result.coverage.astype(float),
-                "conflict": result.conflicts.astype(float),
-            }
-        )
-        df = df.sort_values("weight", ascending=False).reset_index(drop=True)
+    if rows is None:
+        st.info("Load data on the **Start** step first.")
+        return
 
-        st.markdown("### Per-program weights · coverage · conflict")
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "weight": st.column_config.ProgressColumn(
-                    "weight (learned accuracy)",
-                    format="%.3f",
-                    min_value=0.0,
-                    max_value=1.0,
-                ),
-                "coverage": st.column_config.ProgressColumn(
-                    "coverage", format="%.2f", min_value=0.0, max_value=1.0
-                ),
-                "conflict": st.column_config.ProgressColumn(
-                    "conflict", format="%.2f", min_value=0.0, max_value=1.0
-                ),
-            },
-        )
+    pipe = st.session_state.production_result
+    agg = st.session_state.aggregation
 
-        # ── Side-by-side bar charts
-        st.markdown("### Bar view")
-        col_w, col_c, col_x = st.columns(3)
-        with col_w:
-            st.caption("Snorkel learned weight (≈ per-program accuracy)")
-            st.bar_chart(df.set_index("program")["weight"], height=420)
-        with col_c:
-            st.caption("Coverage (fraction non-abstain)")
-            st.bar_chart(df.set_index("program")["coverage"], height=420)
-        with col_x:
-            st.caption("Conflict rate (LFAnalysis)")
-            st.bar_chart(df.set_index("program")["conflict"], height=420)
+    if st.session_state.mode == "mock" and pipe is None:
+        st.info("Click **Run pipeline** above to see results.")
+        return
+    if st.session_state.mode != "mock" and agg is None:
+        st.info("Click **Run aggregation** above.")
+        return
 
-
-# ── Tab: Results ────────────────────────────────────────────────────────
-with tab_results:
-    result = st.session_state.aggregation
-    rows = st.session_state.rows
-    if result is None or rows is None:
-        st.info("Run aggregation first.")
+    if st.session_state.mode == "mock" and pipe is not None:
+        if (
+            st.session_state.orig_indices is not None
+            and DEMO_TEST_S1.exists()
+            and DEMO_TEST_S2.exists()
+        ):
+            idx = np.asarray(st.session_state.orig_indices, dtype=int)
+            s1 = np.load(DEMO_TEST_S1)[idx]
+            s2 = np.load(DEMO_TEST_S2)[idx]
+            hard, soft = P.predict_on_scores(s1, s2, pipe)
+            labeled = P.attach_predictions_to_rows(rows, hard, soft)
+        else:
+            labeled = rows
     else:
-        st.markdown("### Predicted labels")
-        labeled = P.label_jsonl_export(rows, result)
-        df = pd.DataFrame(
-            [
-                {
-                    "i": i,
-                    "query": str(r.get("query", ""))[:120],
-                    "predicted_verdict": r["pajama_predicted_verdict"],
-                    "P(response2 wins)": (
-                        f"{r['pajama_response2_prob']:.3f}"
-                        if r["pajama_response2_prob"] is not None
-                        else "—"
-                    ),
-                    "abstained": r["pajama_abstained"],
-                    "gold_verdict": r.get("verdict", "—"),
-                }
-                for i, r in enumerate(labeled)
-            ]
-        )
+        labeled = P.label_jsonl_export(rows, agg)
 
-        # KPI: agreement with gold.
-        # In mock mode, surface the precomputed full-validation-set metric
-        # (500 samples) so the headline number reflects the entire validation
-        # dataset rather than just the 50 samples previewed below.
-        val_metric_shown = False
-        if st.session_state.mode == "mock" and MOCK_PIPELINE_SUMMARY.exists():
-            try:
-                with open(MOCK_PIPELINE_SUMMARY) as f:
-                    summary = json.load(f)
-                vm = summary.get("LabelModel_val") or {}
-                acc = vm.get("accuracy")
-                n_total = vm.get("n_total")
-                n_covered = vm.get("n_covered")
-                if acc is not None and n_total and n_covered:
-                    st.metric(
-                        "Agreement with gold (on covered samples)",
-                        f"{100*acc:.1f}%",
-                        help=(
-                            f"Precomputed LabelModel agreement over the full "
-                            f"{n_total}-sample validation split of "
-                            f"sprocket-lab/PAJAMA (judgelm subset on Hugging "
-                            f"Face): {n_covered}/{n_total} covered samples "
-                            f"agree with the gold verdict."
-                        ),
-                    )
-                    st.caption(
-                        f"Headline metric is computed on all {n_total} validation samples "
-                        f"from the `sprocket-lab/PAJAMA` judgelm subset on Hugging Face."
-                    )
-                    val_metric_shown = True
-            except Exception:
-                val_metric_shown = False
+    out = pd.DataFrame(
+        [
+            {
+                "index": i,
+                "query": str(r.get("query", ""))[:100],
+                "predicted_verdict": r.get("pajama_predicted_verdict", "—"),
+                "P(response2 wins)": (
+                    f"{r['pajama_response2_prob']:.3f}"
+                    if r.get("pajama_response2_prob") is not None
+                    else "—"
+                ),
+                "abstained": r.get("pajama_abstained", "—"),
+                "gold": r.get("verdict", "—"),
+            }
+            for i, r in enumerate(labeled)
+        ]
+    )
+    st.dataframe(out, use_container_width=True, hide_index=True)
+    buf = io.StringIO()
+    for r in labeled:
+        buf.write(json.dumps(r) + "\n")
+    st.download_button(
+        "Download labeled JSONL",
+        data=buf.getvalue(),
+        file_name="pajama_labeled.jsonl",
+        use_container_width=True,
+    )
 
-        if not val_metric_shown:
-            gold = [r.get("verdict") for r in labeled]
-            gold_known = [(i, g) for i, g in enumerate(gold) if g in (1, "1", 2, 2.0, "2")]
-            if gold_known:
-                covered = [
-                    (g, labeled[i]["pajama_predicted_verdict"])
-                    for i, g in gold_known
-                    if not labeled[i]["pajama_abstained"]
-                ]
-                if covered:
-                    agree = sum(int(int(g) == int(p)) for g, p in covered)
-                    st.metric(
-                        "Agreement with gold (on covered samples)",
-                        f"{100*agree/len(covered):.1f}%",
-                        help=f"{agree}/{len(covered)} covered samples agree with gold verdict.",
-                    )
 
-        st.caption(
-            f"Showing predicted labels for the {len(df)} loaded samples below."
-        )
-        st.dataframe(df, use_container_width=True, hide_index=True)
+# ── Main layout ─────────────────────────────────────────────────────────
+_inject_app_css()
+_render_app_header()
+_render_step_nav()
 
-        buf = io.StringIO()
-        for r in labeled:
-            buf.write(json.dumps(r) + "\n")
-        st.download_button(
-            "⬇️ Download labeled JSONL",
-            data=buf.getvalue(),
-            file_name="pajama_labeled.jsonl",
-            mime="application/jsonl",
-            use_container_width=True,
-        )
+_step = st.session_state.workflow_step
+if _step == "setup":
+    _render_step_setup()
+elif _step == "prompt":
+    _render_step_prompt()
+elif _step == "programs":
+    _render_step_programs()
+else:
+    _render_step_results()
