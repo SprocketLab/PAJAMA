@@ -10,7 +10,7 @@ Programmatic judges enable scalable, high-throughput, low-cost, and transparent 
 
 ![Main results scatter plot](./assets/all_model_scatters.png)
 
-## Quickstart
+## Quick Start
 
 **Install dependencies:**
 
@@ -53,7 +53,7 @@ Our benchmark datasets are available on Hugging Face:
 [https://huggingface.co/datasets/sprocket-lab/PAJAMA](https://huggingface.co/datasets/sprocket-lab/PAJAMA)
 
 ## How PAJAMA Works
-
+![Framework](./assets/framework.png)
 **1. Program Generation** — Generates 80 judge programs (10 evaluation rubrics × 8 variants each). Each program takes a query and a response, then returns a float score using only built-in Python (no ML libraries), making them fast and deterministic.
 
 **2. Program Execution** — Each program scores both responses in a pairwise comparison, producing a label matrix over the dataset.

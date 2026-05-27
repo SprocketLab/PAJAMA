@@ -2,7 +2,7 @@
 
 Fine-tune Qwen2.5 as a pairwise reward model on PAJAMA preference data.
 
-## Quick start
+## Quick Start
 
 Run `converting_data.py` first to prepare the data (see [Data](#data) section below), then train:
 
@@ -20,7 +20,7 @@ python reward_model_training.py \
     --output_path ./models/qwen_rm_judgelm_gpt4
 ```
 
-## Data
+## Dataset
 
 Run `converting_data.py` to produce the training directories:
 

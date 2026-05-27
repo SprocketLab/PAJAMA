@@ -2,7 +2,7 @@
 
 Runs a local model as a pairwise preference judge via a vLLM server. Supports 5 datasets across val/test splits.
 
-## Quick start
+## Quick Start
 
 **Step 1 — Start the vLLM server** (e.g. in a tmux session)
 

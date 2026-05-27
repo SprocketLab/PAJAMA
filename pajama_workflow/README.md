@@ -2,7 +2,7 @@
 
 We use the pool of synthesized programmatic judges from `synthesized_programmatic_judges/` and model them with [Snorkel](https://snorkel.ai/) into an aggregated preference verdict.
 
-## Quick start
+## Quick Start
 
 ```bash
 python run.py --dataset judgelm
@@ -12,7 +12,7 @@ python run.py --dataset prometheus
 python run.py --dataset preference_700K
 ```
 
-## How it works?
+## How It Works
 
 1. **Program Execution** — invoke every `judging_function(query, response)` on val + test; cache to `.npy`.
 2. **Output Normalization** — per-program P1/P99 min-max on val scores; compute `diff = norm(s1) - norm(s2)`.
