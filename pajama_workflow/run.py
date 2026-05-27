@@ -128,7 +128,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 SEED = 42
 MIN_ACCURACY_THRESHOLD = 0.50
-THRESHOLD_CANDIDATES = np.arange(0.0, 0.16, 0.01)
+THRESHOLD_CANDIDATES = np.arange(0.0, 0.15, 0.01)
 
 SNORKEL_CARDINALITY = 2
 SNORKEL_EPOCHS = 500

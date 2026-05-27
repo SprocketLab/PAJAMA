@@ -274,8 +274,13 @@ def aggregate(
     M[diff < -abstain_band] = 1
     M[np.isnan(diff)] = -1
 
-    label_model = LabelModel(cardinality=2, verbose=False)
-    label_model.fit(L_train=M, n_epochs=epochs, lr=lr, l2=l2, seed=seed)
+    if m >= 3:
+        label_model = LabelModel(cardinality=2, verbose=False)
+        label_model.fit(L_train=M, n_epochs=epochs, lr=lr, l2=l2, seed=seed)
+        weights = np.asarray(label_model.get_weights(), dtype=float)
+    else:
+        label_model = MajorityLabelVoter(cardinality=2)
+        weights = np.ones(m, dtype=float) / max(m, 1)
 
     hard = label_model.predict(L=M, tie_break_policy="abstain")
     soft_full = label_model.predict_proba(L=M)  # (n, 2)
@@ -283,8 +288,6 @@ def aggregate(
     all_abstain = (M == -1).all(axis=1)
     soft[all_abstain] = np.nan
     hard[all_abstain] = -1
-
-    weights = np.asarray(label_model.get_weights(), dtype=float)
     coverage = (M != -1).mean(axis=0)
     try:
         analysis = LFAnalysis(L=M).lf_summary()
@@ -574,15 +577,20 @@ def run_from_cached_scores(
     M_val = build_label_matrix(val_diffs, selected_programs, best_thresholds)
 
     report(0.75, f"Training Snorkel LabelModel (top-{best_k} programs)…")
-    label_model = LabelModel(cardinality=SNORKEL_CARDINALITY, verbose=False)
-    label_model.fit(
-        L_train=M_val,
-        Y_dev=y_val,
-        n_epochs=SNORKEL_EPOCHS,
-        l2=SNORKEL_L2,
-        lr=SNORKEL_LR,
-        seed=SNORKEL_SEED,
-    )
+    if best_k >= 3:
+        label_model = LabelModel(cardinality=SNORKEL_CARDINALITY, verbose=False)
+        label_model.fit(
+            L_train=M_val,
+            Y_dev=y_val,
+            n_epochs=SNORKEL_EPOCHS,
+            l2=SNORKEL_L2,
+            lr=SNORKEL_LR,
+            seed=SNORKEL_SEED,
+        )
+        weights = np.asarray(label_model.get_weights(), dtype=float)
+    else:
+        label_model = MajorityLabelVoter(cardinality=SNORKEL_CARDINALITY)
+        weights = np.ones(best_k, dtype=float) / best_k
 
     report(0.92, "Computing validation predictions and metrics…")
     val_all_abstain = (M_val == -1).all(axis=1)
@@ -598,7 +606,6 @@ def run_from_cached_scores(
 
     metrics_lm_val = _full_metrics(y_val, Y_hat_val)
 
-    weights = np.asarray(label_model.get_weights(), dtype=float)
     coverage = (M_val != -1).mean(axis=0)
     try:
         analysis = LFAnalysis(L=M_val).lf_summary()

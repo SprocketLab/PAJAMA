@@ -47,7 +47,7 @@ DEMO_TEST_S1 = DEMO_OUTPUTS / "test_s1.npy"
 DEMO_TEST_S2 = DEMO_OUTPUTS / "test_s2.npy"
 DEMO_PIPELINE_SUMMARY = DEMO_OUTPUTS / "pipeline_summary.json"
 
-MOCK_SAMPLE_SIZE = 50
+MOCK_SAMPLE_SIZE = 60
 
 # ── Branding ────────────────────────────────────────────────────────────
 # Pajamas icon by Freepik (https://www.flaticon.com/free-icon/pajamas_2892174),
@@ -105,10 +105,10 @@ def init_state():
 init_state()
 
 WORKFLOW_STEPS = [
-    ("Start", "setup"),
-    ("Prompt", "prompt"),
-    ("Programs", "programs"),
-    ("Results", "results"),
+    ("Load Dataset", "setup"),
+    ("Synthesis Prompt", "prompt"),
+    ("Generated Programs", "programs"),
+    ("Verdict Aggregation", "results"),
 ]
 
 _APPLE_CSS = """
@@ -201,7 +201,7 @@ def _render_app_header() -> None:
               {icon_html}
               <div>
                 <h1>PAJAMA Workflow</h1>
-                <p>Programmatic judges for pairwise preferences.</p>
+                <p>Synthesized Programmatic Judges for Scalable Preference Evaluation.</p>
               </div>
             </div>
           </div>
@@ -219,7 +219,7 @@ def _render_step_nav() -> None:
             if st.button(
                 label,
                 key=f"nav_{key}",
-                use_container_width=True,
+                width='stretch',
                 type="primary" if key == step else "secondary",
             ):
                 st.session_state.workflow_step = key
@@ -232,19 +232,19 @@ def _render_step_nav() -> None:
     if has_back and has_continue:
         nav_l, nav_r = st.columns(2)
         with nav_l:
-            if st.button("← Back", use_container_width=True):
+            if st.button("← Back", width='stretch'):
                 st.session_state.workflow_step = WORKFLOW_STEPS[idx - 1][1]
                 st.rerun()
         with nav_r:
-            if st.button("Continue →", use_container_width=True):
+            if st.button("Continue →", width='stretch'):
                 st.session_state.workflow_step = WORKFLOW_STEPS[idx + 1][1]
                 st.rerun()
     elif has_back:
-        if st.button("← Back", use_container_width=True):
+        if st.button("← Back", width='stretch'):
             st.session_state.workflow_step = WORKFLOW_STEPS[idx - 1][1]
             st.rerun()
     elif has_continue:
-        if st.button("Continue →", use_container_width=True):
+        if st.button("Continue →", width='stretch'):
             st.session_state.workflow_step = WORKFLOW_STEPS[idx + 1][1]
             st.rerun()
 
@@ -329,68 +329,6 @@ def _mock_pipeline_ready() -> bool:
     return P.load_demo_val_arrays(DEMO_OUTPUTS) is not None
 
 
-def _render_fixed_bar_chart(
-    series: pd.Series,
-    *,
-    height: int = 420,
-    y_max: float | None = None,
-) -> None:
-    """Fixed-size bar chart matching Streamlit default blue; no zoom/resize on scroll."""
-    import plotly.graph_objects as go
-
-    if len(series) == 0:
-        st.caption("(no data)")
-        return
-
-    y_vals = series.values.astype(float)
-    x_vals = [str(x) for x in series.index]
-    ymax = float(y_max) if y_max is not None else float(y_vals.max()) * 1.08
-    ymax = max(ymax, 0.01)
-
-    fig = go.Figure(
-        go.Bar(
-            x=x_vals,
-            y=y_vals,
-            marker=dict(color="#0068C9", line=dict(width=0)),
-        )
-    )
-    fig.update_layout(
-        height=height,
-        width=320,
-        autosize=False,
-        margin=dict(l=44, r=8, t=8, b=100),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        bargap=0.2,
-        dragmode=False,
-        hovermode="x",
-        xaxis=dict(
-            tickangle=-90,
-            fixedrange=True,
-            showline=False,
-            tickfont=dict(size=9),
-        ),
-        yaxis=dict(
-            range=[0, ymax],
-            fixedrange=True,
-            showgrid=True,
-            gridcolor="rgba(150,150,150,0.25)",
-            showline=False,
-            zeroline=False,
-        ),
-    )
-    st.plotly_chart(
-        fig,
-        use_container_width=False,
-        config={
-            "scrollZoom": False,
-            "displayModeBar": False,
-            "doubleClick": False,
-            "displaylogo": False,
-            "responsive": False,
-        },
-    )
-
 
 def _score_with_programs(rows, programs, progress_text="Scoring"):
     """Score (rows × programs). Uses cached arrays in mock mode when possible."""
@@ -442,7 +380,7 @@ def _program_edit_dialog(program_id: int) -> None:
     new_code = st.text_area("Python code", value=p.code, height=360, label_visibility="collapsed")
     s1, s2, s3 = st.columns(3)
     with s1:
-        if st.button("Save", type="primary", use_container_width=True):
+        if st.button("Save", type="primary", width='stretch'):
             if new_code != p.code:
                 p.dirty = True
             p.code = new_code
@@ -458,7 +396,7 @@ def _program_edit_dialog(program_id: int) -> None:
                 p.status = f"compile_error: {e}"
                 st.error(str(e))
     with s2:
-        if st.button("Recompile", use_container_width=True):
+        if st.button("Recompile", width='stretch'):
             try:
                 p.fn = P.compile_program(p.code)
                 p.status = "success"
@@ -467,7 +405,7 @@ def _program_edit_dialog(program_id: int) -> None:
                 p.fn = None
                 st.error(str(e))
     with s3:
-        if st.button("Close", use_container_width=True):
+        if st.button("Close", width='stretch'):
             st.rerun()
 
 
@@ -515,7 +453,7 @@ def _program_chat_dialog(program_id: int) -> None:
         st.code(pending[:2500] + ("…" if len(pending) > 2500 else ""), language="python")
         a, b = st.columns(2)
         with a:
-            if st.button("Use this code", type="primary", use_container_width=True):
+            if st.button("Use this code", type="primary", width='stretch'):
                 try:
                     p.code = pending
                     p.fn = P.compile_program(pending)
@@ -529,7 +467,7 @@ def _program_chat_dialog(program_id: int) -> None:
                 except Exception as e:
                     st.error(str(e))
         with b:
-            if st.button("Discard", use_container_width=True):
+            if st.button("Discard", width='stretch'):
                 st.session_state.pop(f"_pending_code_{program_id}", None)
                 st.rerun()
 
@@ -539,7 +477,7 @@ def _render_step_setup() -> None:
         """
         <div class="card-panel">
           <h3>How do you want to run PAJAMA?</h3>
-          <p class="sub">Pick a mode, load your data, then tap <strong>Continue</strong> to move on.</p>
+          <p class="sub">You can pick a mode, load/upload your data, then tap <strong>Continue</strong> to move on.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -549,9 +487,9 @@ def _render_step_setup() -> None:
         "Mode",
         options=["mock", "live"],
         format_func=lambda x: (
-            "Demo — try instantly with a sample dataset (recommended)"
+            "Demo — try instantly with an example dataset (using JudgeLM samples)."
             if x == "mock"
-            else "Live — use your own data and Claude API"
+            else "Live — upload your own data and calling Claude API for new programs."
         ),
         index=0 if st.session_state.mode == "mock" else 1,
         label_visibility="collapsed",
@@ -560,18 +498,18 @@ def _render_step_setup() -> None:
 
     if mode == "mock":
         st.markdown(
-            '<div class="card-panel"><h3>Load sample data</h3>'
-            '<p class="sub">50 example pairs + 80 pre-built judges (no API key needed).</p></div>',
+            '<div class="card-panel"><h3>Load an Example Dataset</h3>'
+            '<p class="sub">60 sample pairs + 80 pre-built judges (no API key needed).</p></div>',
             unsafe_allow_html=True,
         )
-        if st.button("Load sample dataset", type="primary", use_container_width=True):
+        if st.button("Load an Example Dataset", type="primary", width='stretch'):
             _bootstrap_mock()
-            st.success("Ready — 50 samples and 80 judges loaded.")
+            st.success("Ready — 60 samples and 80 programmatic judges loaded.")
             st.rerun()
     else:
         st.markdown(
-            '<div class="card-panel"><h3>Your API key</h3>'
-            '<p class="sub">Required to generate and chat with judges.</p></div>',
+            '<div class="card-panel"><h3>Submit Your API key</h3>'
+            '<p class="sub">Generate and edit your own programmatic judges.</p></div>',
             unsafe_allow_html=True,
         )
         st.session_state.api_key = st.text_input(
@@ -585,7 +523,7 @@ def _render_step_setup() -> None:
             type=["jsonl", "json"],
             label_visibility="collapsed",
         )
-        if uploaded is not None and st.button("Use this file", use_container_width=True):
+        if uploaded is not None and st.button("Use this file", width='stretch'):
             text = uploaded.read().decode("utf-8")
             rows = [json.loads(line) for line in text.splitlines() if line.strip()]
             st.session_state.rows = rows
@@ -598,27 +536,27 @@ def _render_step_setup() -> None:
 
     if st.session_state.rows is not None:
         n = len(st.session_state.rows)
-        st.success(f"Dataset ready — {n} pairwise samples ({st.session_state.rows_source}).")
+        st.success(f"Dataset ready — {n} pairwise samples.")
         with st.expander("Preview data"):
             preview = pd.DataFrame(
                 [
                     {
-                        "query": str(r.get("query", ""))[:100],
-                        "response1": str(r.get("response1", ""))[:80],
-                        "response2": str(r.get("response2", ""))[:80],
+                        "query": str(r.get("query", "")),
+                        "response1": str(r.get("response1", "")),
+                        "response2": str(r.get("response2", "")),
                     }
-                    for r in st.session_state.rows[:15]
+                    for r in st.session_state.rows[:30]
                 ]
             )
-            st.dataframe(preview, use_container_width=True, hide_index=True)
+            st.dataframe(preview, width='stretch', hide_index=True)
 
 
 def _render_step_prompt() -> None:
     st.markdown(
         """
         <div class="card-panel">
-          <h3>Prompt template</h3>
-          <p class="sub">Instructions sent to Claude when creating each judge. Advanced users can edit placeholders.</p>
+          <h3>Our Prompt Template</h3>
+          <p class="sub">This is the instruction sent to Claude Opus 4.6 to generate 80 programmatic judges. You can modify it by changing the code block below. Otherwise, press Continue.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -631,7 +569,7 @@ def _render_step_prompt() -> None:
     )
     b1, b2 = st.columns(2)
     with b1:
-        if st.button("Save template", type="primary", use_container_width=True):
+        if st.button("Save template", type="primary", width='stretch'):
             required = {
                 "{heuristic_name}",
                 "{heuristic_description}",
@@ -646,7 +584,7 @@ def _render_step_prompt() -> None:
                 st.session_state.prompt_template = template
                 st.success("Saved.")
     with b2:
-        if st.button("Reset to default", use_container_width=True):
+        if st.button("Reset to default", width='stretch'):
             st.session_state.prompt_template = G.DEFAULT_PROMPT_TEMPLATE
             st.rerun()
 
@@ -687,37 +625,27 @@ def _render_step_programs() -> None:
         """
         <div class="card-panel">
           <h3>Your 80 judges</h3>
-          <p class="sub">Each row is one program. Use Edit, Chat, or Delete — one judge at a time.</p>
+          <p class="sub">Each row represents a programmatic judge. You can customize them by using Edit, Chat, or Delete — one judge at a time.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    tb1, tb2, tb3, tb4 = st.columns(4)
+    tb1, tb2 = st.columns(2)
     with tb1:
         gen_ok = (
             st.session_state.mode == "live"
             and st.session_state.api_key
             and st.session_state.rows is not None
         )
-        if st.button("Generate 80 judges", disabled=not gen_ok, use_container_width=True):
+        if st.button("Generate 80 judges", disabled=not gen_ok, width='stretch'):
             _run_full_generation()
             st.rerun()
     with tb2:
-        if st.button("Reload (demo)", disabled=st.session_state.mode != "mock", use_container_width=True):
+        if st.button("Reload (demo)", disabled=st.session_state.mode != "mock", width='stretch'):
             st.session_state.programs = _load_mock_programs()
             st.session_state.production_result = None
             st.rerun()
-    with tb3:
-        if st.button("Select all", disabled=not progs, use_container_width=True):
-            for p in progs:
-                p.selected = True
-            st.session_state.aggregation = None
-    with tb4:
-        if st.button("Deselect all", disabled=not progs, use_container_width=True):
-            for p in progs:
-                p.selected = False
-            st.session_state.aggregation = None
 
     if not progs:
         st.info("Load sample data on the **Start** step, or generate judges in Live mode.")
@@ -726,7 +654,7 @@ def _render_step_programs() -> None:
     st.session_state.program_search = st.text_input(
         "Search judges",
         value=st.session_state.program_search,
-        placeholder="e.g. judge_12",
+        placeholder="select a judge by name, e.g., judge_12",
         label_visibility="collapsed",
     )
     q = st.session_state.program_search.strip().lower()
@@ -758,13 +686,13 @@ def _render_step_programs() -> None:
                     unsafe_allow_html=True,
                 )
             with c1:
-                if st.button("Edit", key=f"edit_{p.program_id}", use_container_width=True):
+                if st.button("Edit", key=f"edit_{p.program_id}", width='stretch'):
                     _program_edit_dialog(p.program_id)
             with c2:
-                if st.button("Chat", key=f"chat_{p.program_id}", use_container_width=True):
+                if st.button("Chat", key=f"chat_{p.program_id}", width='stretch'):
                     _program_chat_dialog(p.program_id)
             with c3:
-                if st.button("Delete", key=f"del_{p.program_id}", use_container_width=True):
+                if st.button("Delete", key=f"del_{p.program_id}", width='stretch'):
                     st.session_state.programs = [
                         x for x in st.session_state.programs if x.program_id != p.program_id
                     ]
@@ -844,17 +772,17 @@ def _render_step_results() -> None:
     st.markdown(
         """
         <div class="card-panel">
-          <h3>Aggregate &amp; download labels</h3>
-          <p class="sub">Set how strict judges should be, run the pipeline, then review accuracy and predictions.</p>
+          <h3>Aggregate &amp; download predictions</h3>
+          <p class="sub">Set how strict judges should be, run the weak supervision pipeline, then review accuracy and predicted preferences.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     st.session_state.abstain_band = st.slider(
-        "Abstain threshold (max per-program tuning)",
+        "Abstain threshold",
         min_value=0.0,
-        max_value=0.50,
+        max_value=0.30,
         value=float(st.session_state.abstain_band),
         step=0.01,
         help="Higher = more cautious judges. Default 0.14 for the demo.",
@@ -867,10 +795,10 @@ def _render_step_results() -> None:
                 "Run pipeline",
                 type="primary",
                 disabled=not _mock_pipeline_ready(),
-                use_container_width=True,
+                width='stretch',
             )
         with c2:
-            if st.button("Clear results", disabled=pipe is None, use_container_width=True):
+            if st.button("Clear results", disabled=pipe is None, width='stretch'):
                 st.session_state.production_result = None
                 st.session_state.production_threshold = None
                 st.rerun()
@@ -898,49 +826,71 @@ def _render_step_results() -> None:
             st.warning("Threshold changed — click **Run pipeline** to refresh.")
 
         pipe = st.session_state.production_result
-        if pipe is not None:
-            vm = pipe.summary.get("LabelModel_val", {})
-            st.metric(
-                f"Agreement with gold ({vm.get('n_total', 500)} validation samples)",
-                f"{100 * vm.get('accuracy', 0):.1f}%",
-                help="Full validation set via production pipeline (cached scores).",
-            )
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Validation samples", vm.get("n_total", 500))
-            m2.metric("Agreement with gold", f"{100*vm.get('accuracy', 0):.1f}%")
-            m3.metric("Coverage", f"{100*vm.get('coverage', 0):.1f}%")
-            m4.metric("Judges used", pipe.summary.get("best_k", "—"))
+        if pipe is None:
+            st.info("Click **Run pipeline** above to see results.")
+            return
 
-            st.markdown("##### Selected judges")
-            df = pd.DataFrame(
-                {
-                    "program": [f"judge_{pid}" for pid in pipe.selected_program_ids],
-                    "weight": pipe.weights.astype(float),
-                    "coverage": pipe.coverage.astype(float),
-                    "conflict": pipe.conflicts.astype(float),
-                }
-            )
-            st.dataframe(df, use_container_width=True, hide_index=True)
+        # Compute predictions on the displayed test samples first so the
+        # Coverage metric below is consistent with the abstained column in the table.
+        labeled: list[dict] = rows or []
+        hard: np.ndarray | None = None
+        soft: np.ndarray | None = None
+        if (
+            rows is not None
+            and st.session_state.orig_indices is not None
+            and DEMO_TEST_S1.exists()
+            and DEMO_TEST_S2.exists()
+        ):
+            idx = np.asarray(st.session_state.orig_indices, dtype=int)
+            s1_test = np.load(DEMO_TEST_S1)[idx]
+            s2_test = np.load(DEMO_TEST_S2)[idx]
+            hard, soft = P.predict_on_scores(s1_test, s2_test, pipe)
+            labeled = P.attach_predictions_to_rows(rows, hard, soft)
 
-            st.markdown("##### Charts")
-            cw, cc, cx = st.columns(3)
-            with cw:
-                _render_fixed_bar_chart(df.set_index("program")["weight"], height=320)
-            with cc:
-                _render_fixed_bar_chart(
-                    df.set_index("program")["coverage"], height=320, y_max=1.0
-                )
-            with cx:
-                _render_fixed_bar_chart(
-                    df.set_index("program")["conflict"], height=320, y_max=1.0
-                )
+        test_coverage = float((hard != -1).mean()) if hard is not None else None
+
+        # Accuracy on non-abstained test rows that have a ground-truth verdict.
+        test_accuracy: float | None = None
+        if hard is not None and rows is not None:
+            verdicts = [r.get("verdict") for r in rows]
+            valid = [
+                i for i, (h, v) in enumerate(zip(hard, verdicts))
+                if h != -1 and str(v) in ("1", "2")
+            ]
+            if valid:
+                y_true = np.array([int(verdicts[i]) - 1 for i in valid])  # {1,2} → {0,1}
+                y_pred = hard[valid]
+                test_accuracy = float((y_true == y_pred).mean())
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric(
+            "Agreement with ground truth",
+            f"{100*test_accuracy:.1f}%" if test_accuracy is not None else "—",
+        )
+        m2.metric(
+            "Coverage",
+            f"{100*test_coverage:.1f}%" if test_coverage is not None else "—",
+        )
+        m3.metric("# of Selected Judges", pipe.summary.get("best_k", "—"))
+
+        st.markdown("##### Selected judges")
+        df = pd.DataFrame(
+            {
+                "program": [f"judge_{pid}" for pid in pipe.selected_program_ids],
+                "aggregation weight": pipe.weights.astype(float),
+                "coverage": pipe.coverage.astype(float),
+                "conflict": pipe.conflicts.astype(float),
+            }
+        )
+        st.dataframe(df, width='stretch', hide_index=True)
+
     else:
         sel = _selected_programs()
         if st.button(
             "Run aggregation",
             type="primary",
             disabled=not (sel and rows),
-            use_container_width=True,
+            width='stretch',
         ):
             s1, s2 = _score_with_programs(rows, sel)
             with st.spinner("Aggregating…"):
@@ -952,61 +902,43 @@ def _render_step_results() -> None:
                 )
             st.session_state.production_result = None
             st.rerun()
+
         agg = st.session_state.aggregation
-        if agg is not None:
-            st.metric("Coverage", f"{100*(agg.hard != -1).mean():.1f}%")
+        if agg is None:
+            if rows is None:
+                st.info("Load data on the **Start** step first.")
+            else:
+                st.info("Click **Run aggregation** above.")
+            return
+
+        st.metric("Coverage", f"{100*(agg.hard != -1).mean():.1f}%")
+        labeled = P.label_jsonl_export(rows, agg)
 
     st.markdown("---")
-    st.markdown("##### Predictions on your loaded samples")
+    st.markdown("##### Your Predicted Preferences (Annotated by Programs)")
 
-    if rows is None:
+    if not labeled:
         st.info("Load data on the **Start** step first.")
         return
-
-    pipe = st.session_state.production_result
-    agg = st.session_state.aggregation
-
-    if st.session_state.mode == "mock" and pipe is None:
-        st.info("Click **Run pipeline** above to see results.")
-        return
-    if st.session_state.mode != "mock" and agg is None:
-        st.info("Click **Run aggregation** above.")
-        return
-
-    if st.session_state.mode == "mock" and pipe is not None:
-        if (
-            st.session_state.orig_indices is not None
-            and DEMO_TEST_S1.exists()
-            and DEMO_TEST_S2.exists()
-        ):
-            idx = np.asarray(st.session_state.orig_indices, dtype=int)
-            s1 = np.load(DEMO_TEST_S1)[idx]
-            s2 = np.load(DEMO_TEST_S2)[idx]
-            hard, soft = P.predict_on_scores(s1, s2, pipe)
-            labeled = P.attach_predictions_to_rows(rows, hard, soft)
-        else:
-            labeled = rows
-    else:
-        labeled = P.label_jsonl_export(rows, agg)
 
     out = pd.DataFrame(
         [
             {
                 "index": i,
-                "query": str(r.get("query", ""))[:100],
-                "predicted_verdict": r.get("pajama_predicted_verdict", "—"),
-                "P(response2 wins)": (
-                    f"{r['pajama_response2_prob']:.3f}"
+                "query": str(r.get("query", "")),
+                "abstained": r.get("pajama_abstained", "—"),
+                "prediction": r.get("pajama_predicted_verdict", "—"),
+                "ground truth": r.get("verdict", "—"),
+                "P(response_2 wins)": (
+                    f"{r['pajama_response2_prob']:.2f}"
                     if r.get("pajama_response2_prob") is not None
                     else "—"
                 ),
-                "abstained": r.get("pajama_abstained", "—"),
-                "gold": r.get("verdict", "—"),
             }
             for i, r in enumerate(labeled)
         ]
     )
-    st.dataframe(out, use_container_width=True, hide_index=True)
+    st.dataframe(out, width='stretch', hide_index=True)
     buf = io.StringIO()
     for r in labeled:
         buf.write(json.dumps(r) + "\n")
@@ -1014,7 +946,7 @@ def _render_step_results() -> None:
         "Download labeled JSONL",
         data=buf.getvalue(),
         file_name="pajama_labeled.jsonl",
-        use_container_width=True,
+        width='stretch',
     )
 
 

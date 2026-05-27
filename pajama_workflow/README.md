@@ -16,7 +16,7 @@ python run.py --dataset preference_700K
 
 1. **Program Execution** — invoke every `judging_function(query, response)` on val + test; cache to `.npy`.
 2. **Output Normalization** — per-program P1/P99 min-max on val scores; compute `diff = norm(s1) - norm(s2)`.
-3. **Threshold Tuning** — grid search `t ∈ {0.00 … 0.15}` per program on val; then pick best accuracy.
+3. **Threshold Tuning** — grid search `t ∈ {0.00 … 0.14}` per program on val; then pick best accuracy.
 4. **Program Filtering** — drop programs below `50%`.
 5. **Top-k Program Selection** — rank survivors by val accuracy; sweep `k` and pick the subset with highest Snorkel agreement on val.
 6. **Verdict Aggregation** — fit Snorkel `LabelModel` on `M_val`; evaluate on test. All-abstain rows stay uncovered.

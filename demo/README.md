@@ -1,20 +1,17 @@
-# PAJAMA Workflow (Streamlit demo)
+# PAJAMA Studio (A Streamlit Demo)
 
-A self-contained Streamlit app for programmatic pairwise preference labeling.
+This is a self-contained Streamlit app using programmatic judges to evaluate pairwise preference.
 
-**Workflow:** Start → Prompt → Programs → Results
+**Workflow:** Sythesis Prompt → Synthesized Programs → Aggregation
 
 | Mode | Data | Judges | Aggregation |
 |------|------|--------|-------------|
-| **Demo** (default) | 50-row sample from bundled JSONL | 80 pre-built judges under `synthesized_programmatic_judges/judgelm/` | Production pipeline on cached val scores (`demo/outputs/*.npy`) |
-| **Live** | Upload JSONL (`query`, `response1`, `response2`) | Generate 80 via Claude | Val-free Snorkel on selected judges |
+| **Demo** (an example) | 60-row sample from bundled JSONL | 80 pre-built judges under `synthesized_programmatic_judges/judgelm/` | Production pipeline on cached val scores (`demo/outputs/*.npy`) |
+| **Live** (can be your dataset) | Upload JSONL (`query`, `response1`, `response2`) | Generate 80 via Claude | Using Snorkel's Label Model on selected judges |
 
-## Setup
+## Quick Start
 
 ```bash
-cd demo
-pip install -r requirements.txt
-
 # Optional for live mode / chat:
 export ANTHROPIC_API_KEY="sk-ant-..."
 
