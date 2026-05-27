@@ -4,7 +4,6 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- Primary Meta Tags -->
   <meta name="title" content="Codifying the Judge: Scalable Evaluation via Program Distillation - Huang, Qiu, Sala">
   <meta name="description" content="PAJAMA distills LLM evaluation criteria into lightweight Python programs, aggregating predictions via weak supervision for scalable, cost-effective assessment.">
   <meta name="keywords" content="LLM evaluation, program synthesis, weak supervision, LLM-as-a-judge, programmatic evaluation, reward model, AI evaluation, machine learning">
@@ -12,7 +11,6 @@
   <meta name="robots" content="index, follow">
   <meta name="language" content="English">
 
-  <!-- Open Graph / Facebook -->
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="SprocketLab, University of Wisconsin-Madison">
   <meta property="og:title" content="Codifying the Judge: Scalable Evaluation via Program Distillation">
@@ -22,13 +20,12 @@
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="PAJAMA - Research Preview">
-  <meta property="article:published_time" content="2025-01-01T00:00:00.000Z">
+  <meta property="article:published_time" content="2026-05-26T00:00:00.000Z">
   <meta property="article:author" content="Tzu-Heng Huang">
   <meta property="article:section" content="Research">
   <meta property="article:tag" content="LLM evaluation">
   <meta property="article:tag" content="program synthesis">
 
-  <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:site" content="@SprocketLab">
   <meta name="twitter:creator" content="@SprocketLab">
@@ -37,46 +34,34 @@
   <meta name="twitter:image" content="https://sprocketlab.github.io/PAJAMA/static/images/social_preview.png">
   <meta name="twitter:image:alt" content="PAJAMA - Research Preview">
 
-  <!-- Academic/Research Specific -->
   <meta name="citation_title" content="Codifying the Judge: Scalable Evaluation via Program Distillation">
   <meta name="citation_author" content="Huang, Tzu-Heng">
   <meta name="citation_author" content="Qiu, Shengqi">
   <meta name="citation_author" content="Sala, Frederic">
-  <meta name="citation_publication_date" content="2025">
-  <meta name="citation_conference_title" content="ICML 2025 Workshop on Programmatic Representations for Agent Learning">
+  <meta name="citation_publication_date" content="2026">
   <meta name="citation_arxiv_id" content="2506.10403">
 
-  <!-- Additional SEO -->
   <meta name="theme-color" content="#2563eb">
-  <meta name="msapplication-TileColor" content="#2563eb">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
-  <!-- Preconnect for performance -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://ajax.googleapis.com">
-  <link rel="preconnect" href="https://documentcloud.adobe.com">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
-
 
   <title>PAJAMA: Codifying the Judge | Huang, Qiu, Sala</title>
 
-  <!-- Favicon and App Icons -->
   <link rel="icon" type="image/x-icon" href="static/images/favicon.ico">
   <link rel="apple-touch-icon" href="static/images/favicon.ico">
 
-  <!-- Critical CSS - Load synchronously -->
   <link rel="stylesheet" href="static/css/bulma.min.css">
   <link rel="stylesheet" href="static/css/index.css">
 
-  <!-- Non-critical CSS - Load asynchronously -->
   <link rel="preload" href="static/css/bulma-carousel.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <link rel="preload" href="static/css/bulma-slider.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <link rel="preload" href="static/css/fontawesome.all.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <link rel="preload" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
 
-  <!-- Fallback for browsers that don't support preload -->
   <noscript>
     <link rel="stylesheet" href="static/css/bulma-carousel.min.css">
     <link rel="stylesheet" href="static/css/bulma-slider.min.css">
@@ -84,10 +69,8 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
   </noscript>
 
-  <!-- Fonts - Optimized loading -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-  <!-- Defer non-critical JavaScript -->
   <script defer src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
   <script defer src="https://documentcloud.adobe.com/view-sdk/main.js"></script>
   <script defer src="static/js/fontawesome.all.min.js"></script>
@@ -95,7 +78,6 @@
   <script defer src="static/js/bulma-slider.min.js"></script>
   <script defer src="static/js/index.js"></script>
 
-  <!-- Structured Data for Academic Papers -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -103,50 +85,19 @@
     "headline": "Codifying the Judge: Scalable Evaluation via Program Distillation",
     "description": "PAJAMA distills LLM evaluation criteria into lightweight Python programs, aggregating predictions via weak supervision for scalable, cost-effective assessment.",
     "author": [
-      {
-        "@type": "Person",
-        "name": "Tzu-Heng Huang",
-        "affiliation": {
-          "@type": "Organization",
-          "name": "University of Wisconsin-Madison"
-        }
-      },
-      {
-        "@type": "Person",
-        "name": "Shengqi Qiu",
-        "affiliation": {
-          "@type": "Organization",
-          "name": "University of Wisconsin-Madison"
-        }
-      },
-      {
-        "@type": "Person",
-        "name": "Frederic Sala",
-        "affiliation": {
-          "@type": "Organization",
-          "name": "University of Wisconsin-Madison"
-        }
-      }
+      {"@type": "Person", "name": "Tzu-Heng Huang", "affiliation": {"@type": "Organization", "name": "University of Wisconsin-Madison"}},
+      {"@type": "Person", "name": "Shengqi Qiu",    "affiliation": {"@type": "Organization", "name": "University of Wisconsin-Madison"}},
+      {"@type": "Person", "name": "Frederic Sala",  "affiliation": {"@type": "Organization", "name": "University of Wisconsin-Madison"}}
     ],
-    "datePublished": "2025-01-01",
-    "publisher": {
-      "@type": "Organization",
-      "name": "ICML 2025 Workshop on Programmatic Representations for Agent Learning"
-    },
+    "datePublished": "2026-05-26",
     "url": "https://sprocketlab.github.io/PAJAMA/",
     "image": "https://sprocketlab.github.io/PAJAMA/static/images/social_preview.png",
     "keywords": ["LLM evaluation", "program synthesis", "weak supervision", "LLM-as-a-judge", "programmatic evaluation"],
-    "abstract": "LLM-as-a-judge is everywhere but suffers from high cost, significant latency, and opaque decisions. We propose PAJAMA, a framework that distills evaluation criteria into lightweight Python programs and aggregates their predictions using weak supervision.",
     "isAccessibleForFree": true,
-    "license": "https://creativecommons.org/licenses/by/4.0/",
-    "mainEntity": {
-      "@type": "WebPage",
-      "@id": "https://sprocketlab.github.io/PAJAMA/"
-    }
+    "license": "https://creativecommons.org/licenses/by/4.0/"
   }
   </script>
 
-  <!-- Website/Organization Structured Data -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -154,116 +105,126 @@
     "name": "SprocketLab, University of Wisconsin-Madison",
     "url": "https://sprocketlab.github.io/",
     "logo": "https://sprocketlab.github.io/PAJAMA/static/images/favicon.ico",
-    "sameAs": [
-      "https://github.com/SprocketLab"
-    ]
+    "sameAs": ["https://github.com/SprocketLab"]
   }
   </script>
 </head>
 <body>
 
+<button class="scroll-to-top" onclick="scrollToTop()" title="Scroll to top" aria-label="Scroll to top">
+  <i class="fas fa-chevron-up"></i>
+</button>
 
-  <!-- Scroll to Top Button -->
-  <button class="scroll-to-top" onclick="scrollToTop()" title="Scroll to top" aria-label="Scroll to top">
-    <i class="fas fa-chevron-up"></i>
+<div class="more-works-container">
+  <button class="more-works-btn" onclick="toggleMoreWorks()" title="View More Works from Our Lab">
+    <i class="fas fa-flask"></i>
+    More Works
+    <i class="fas fa-chevron-down dropdown-arrow"></i>
   </button>
-
-  <!-- More Works Dropdown -->
-  <div class="more-works-container">
-    <button class="more-works-btn" onclick="toggleMoreWorks()" title="View More Works from Our Lab">
-      <i class="fas fa-flask"></i>
-      More Works
-      <i class="fas fa-chevron-down dropdown-arrow"></i>
-    </button>
-    <div class="more-works-dropdown" id="moreWorksDropdown">
-      <div class="dropdown-header">
-        <h4>More Works from SprocketLab</h4>
-        <button class="close-btn" onclick="toggleMoreWorks()">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
-      <div class="works-list">
-        <a href="https://arxiv.org/abs/2506.10403" class="work-item" target="_blank">
-          <div class="work-info">
-            <h5>Time to Impeach LLM-as-a-Judge: Programs are the Future of Evaluation</h5>
-            <p>Preliminary workshop version of PAJAMA introducing programmatic judges.</p>
-            <span class="work-venue">ICML 2025 Workshop</span>
-          </div>
-          <i class="fas fa-external-link-alt"></i>
-        </a>
-        <a href="https://sprocketlab.github.io/" class="work-item" target="_blank">
-          <div class="work-info">
-            <h5>More from SprocketLab</h5>
-            <p>Visit our lab page for more research on weak supervision, data programming, and foundation models.</p>
-            <span class="work-venue">SprocketLab @ UW-Madison</span>
-          </div>
-          <i class="fas fa-external-link-alt"></i>
-        </a>
-      </div>
+  <div class="more-works-dropdown" id="moreWorksDropdown">
+    <div class="dropdown-header">
+      <h4>More Works from SprocketLab</h4>
+      <button class="close-btn" onclick="toggleMoreWorks()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="works-list">
+      <a href="https://arxiv.org/abs/2506.10403" class="work-item" target="_blank">
+        <div class="work-info">
+          <h5>Time to Impeach LLM-as-a-Judge: Programs are the Future of Evaluation</h5>
+          <p>Preliminary workshop version of PAJAMA introducing programmatic judges.</p>
+          <span class="work-venue">ICML 2025 Workshop</span>
+        </div>
+        <i class="fas fa-external-link-alt"></i>
+      </a>
+      <a href="https://arxiv.org/abs/2407.11004" class="work-item" target="_blank">
+        <div class="work-info">
+          <h5>The ALCHEmist: Automated Labeling 500x CHEaper Than LLM Data Annotators</h5>
+          <span class="work-venue">NeurIPS 2024 (Spotlight)</span>
+        </div>
+        <i class="fas fa-external-link-alt"></i>
+      </a>
+      <a href="https://sprocketlab.github.io/" class="work-item" target="_blank">
+        <div class="work-info">
+          <h5>More from SprocketLab</h5>
+          <p>Visit our lab page for more research on weak supervision, data programming, and foundation models.</p>
+          <span class="work-venue">SprocketLab @ UW-Madison</span>
+        </div>
+        <i class="fas fa-external-link-alt"></i>
+      </a>
     </div>
   </div>
+</div>
 
-  <main id="main-content">
-  <section class="hero">
-    <div class="hero-body">
-      <div class="container is-max-desktop">
-        <div class="columns is-centered">
-          <div class="column has-text-centered">
-            <h1 class="title is-1 publication-title">Codifying the Judge: Scalable Evaluation via Program Distillation</h1>
-            <div class="is-size-5 publication-authors">
-              <span class="author-block">
-                <a href="https://github.com/zihengh1" target="_blank">Tzu-Heng Huang</a>,</span>
-              <span class="author-block">
-                <a href="#" target="_blank">Shengqi Qiu</a>,</span>
-              <span class="author-block">
-                <a href="https://pages.cs.wisc.edu/~fredsala/" target="_blank">Frederic Sala</a>
-              </span>
-            </div>
+<main id="main-content">
 
-            <div class="is-size-5 publication-authors">
-              <span class="author-block">University of Wisconsin-Madison<br>ICML 2025 Workshop on Programmatic Representations for Agent Learning</span>
-            </div>
+<!-- ================================================================
+     1. HERO — Title, Authors, Links
+     ================================================================ -->
+<section class="hero">
+  <div class="hero-body">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column has-text-centered">
 
-            <div class="column has-text-centered">
-              <div class="publication-links">
-                <span class="link-block">
-                  <a href="static/pdfs/arXiv_pajama.pdf" target="_blank"
-                  class="external-link button is-normal is-rounded is-dark">
-                  <span class="icon">
-                    <i class="fas fa-file-pdf"></i>
-                  </span>
+          <h1 class="title is-1 publication-title">
+            Codifying the Judge: Scalable Evaluation via Program Distillation
+          </h1>
+
+          <div class="is-size-5 publication-authors">
+            <span class="author-block">
+              <a href="https://zihengh1.github.io/" target="_blank">Tzu-Heng Huang</a><sup>*</sup>,
+            </span>
+            <span class="author-block">
+              <a href="https://dvk0213.github.io/" target="_blank">Shengqi Qiu</a><sup>*</sup>,
+            </span>
+            <span class="author-block">
+              <a href="https://pages.cs.wisc.edu/~fredsala/" target="_blank">Frederic Sala</a>
+            </span>
+          </div>
+
+          <div class="is-size-6 publication-authors" style="margin-top:0.3rem; color:#666;">
+            <sup>*</sup>Equal Contribution
+          </div>
+
+          <div class="is-size-5 publication-authors" style="margin-top:0.4rem;">
+            University of Wisconsin-Madison
+          </div>
+
+          <div class="column has-text-centered" style="margin-top:0.5rem;">
+            <div class="publication-links">
+
+              <span class="link-block">
+                <a href="static/pdfs/arXiv_pajama.pdf" target="_blank"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon"><i class="fas fa-file-pdf"></i></span>
                   <span>Paper</span>
                 </a>
               </span>
 
               <span class="link-block">
-                <a href="https://github.com/SprocketLab/PAJAMA/tree/main" target="_blank"
-                class="external-link button is-normal is-rounded is-dark">
-                <span class="icon">
-                  <i class="fab fa-github"></i>
-                </span>
-                <span>Code</span>
-              </a>
-            </span>
-
-            <span class="link-block">
-              <a class="external-link button is-normal is-rounded is-dark" style="opacity:0.5;cursor:default;" title="arXiv link coming soon">
-              <span class="icon">
-                <i class="ai ai-arxiv"></i>
+                <a class="external-link button is-normal is-rounded is-dark"
+                   style="opacity:0.5; cursor:default;" title="arXiv link coming soon">
+                  <span class="icon"><i class="ai ai-arxiv"></i></span>
+                  <span>ArXiv Page (TBD)</span>
+                </a>
               </span>
-              <span>arXiv (TBD)</span>
-            </a>
-          </span>
 
-          <span class="link-block">
-            <a href="https://huggingface.co/datasets/sprocket-lab/PAJAMA" target="_blank"
-            class="external-link button is-normal is-rounded is-dark">
-            <span class="icon">
-              🤗
-            </span>
-            <span>Dataset</span>
-          </a>
-        </span>
+              <span class="link-block">
+                <a href="https://github.com/SprocketLab/PAJAMA/tree/main" target="_blank"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon"><i class="fab fa-github"></i></span>
+                  <span>Code & Demo</span>
+                </a>
+              </span>
+
+              <span class="link-block">
+                <a href="https://huggingface.co/datasets/sprocket-lab/PAJAMA" target="_blank"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">🤗</span>
+                  <span>Dataset</span>
+                </a>
+              </span>
+
+            </div>
           </div>
         </div>
       </div>
@@ -272,155 +233,562 @@
 </section>
 
 
-<!-- Teaser figure -->
-<section class="hero teaser">
-  <div class="container is-max-desktop">
-    <div class="hero-body">
-      <img src="static/images/framework.png" alt="PAJAMA overview: program distillation pipeline for LLM evaluation" style="width:100%; border-radius:8px;" />
-      <h2 class="subtitle has-text-centered">
-        Given a query and two candidate responses, an LLM synthesizes a diverse pool of programmatic judges from curated rubrics;
-        reliable programs are selected, their verdicts are aggregated, and uncertain cases are routed to an LLM judge to produce the final verdict.
-      </h2>
-    </div>
-  </div>
-</section>
-<!-- End teaser figure -->
-
-<!-- Paper abstract -->
-<section class="section hero is-light">
-  <div class="container is-max-desktop">
-    <div class="columns is-centered has-text-centered">
-      <div class="column is-four-fifths">
-        <h2 class="title is-3">Abstract</h2>
-        <div class="content has-text-justified">
-          <p>
-            LLM-as-a-judge has become the standard for automated evaluation, but it suffers from <em>high cost, significant latency,
-            and opaque decisions</em>—limitations that undermine its scalability and reliability.
-            We address these with a simple, efficient alternative: <strong>program distillation</strong>.
-          </p>
-          <p>
-            Instead of prompting an LLM at evaluation time, we distill its decision logic into a committee of Python programs
-            that score candidates directly. These programmatic judges offer transparency, are easily inspected or edited,
-            and eliminate per-sample API costs.
-          </p>
-          <p>
-            Building on this, we introduce <strong>PAJAMA</strong>, a system that synthesizes programs as judges, aggregates their
-            decisions into a joint verdict, and incorporates a fallback mechanism to selectively escalate low-confidence cases to an LLM.
-            Across five preference datasets and four model families, we show that programmatic judges can match the performance of a
-            13B-size LLM judge. When using program outputs as routing signals, PAJAMA advances the accuracy–throughput Pareto frontier:
-            built on OLMo-2-7B-Instruct, the hybrid evaluation gains +5.0% accuracy at 2.9× higher throughput;
-            on Qwen2.5-3B-Instruct, +2.6% accuracy at 2.2× higher throughput.
-            Beyond evaluation, programmatic judges produce cheap and effective reward signals: on RewardBench, a reward model
-            distilled from programs' verdicts outperforms one trained on a proprietary LLM's labels at two orders of magnitude lower API cost.
-          </p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-<!-- End paper abstract -->
-
-
-<!-- Main result figure -->
+<!-- ================================================================
+     2. MOTIVATION — Why Not Just Use an LLM Judge?
+     ================================================================ -->
+<hr style="margin:0; border:none; border-top:1px solid #e0e0e0;">
 <section class="hero is-small">
   <div class="hero-body">
     <div class="container is-max-desktop">
-      <figure class="image">
-        <img src="static/images/effectiveness.jpg" alt="PAJAMA main results: accuracy vs. throughput across benchmarks" loading="lazy" style="border-radius:8px;" />
-      </figure>
-      <h2 class="subtitle has-text-centered" style="margin-top:1rem;">
-        Programmatic judges provide extremely high throughput with accuracy competitive with mid-sized LLM judges.
-      </h2>
+      <h2 class="title is-3 has-text-centered">Challenges of Using LLM-as-a-Judge</h2>
+      <p class="has-text-centered" style="max-width:600px; margin:0 auto 2rem;">
+        LLM-as-a-judge has become the default for automated evaluation—but four fundamental challenges
+        limit its <strong>scalability</strong> and <strong>reliability</strong>.
+      </p>
+
+      <div class="columns is-multiline">
+
+        <div class="column is-half">
+          <div class="box" style="height:100%; border-left:4px solid #ef4444;">
+            <p class="title is-5" style="color:#ef4444;">
+              <i class="fas fa-dollar-sign" style="margin-right:0.4rem;"></i>Inference Cost
+            </p>
+            <p>Proprietary models like GPT-5 or Gemini-3-Pro make evaluation <strong>prohibitively expensive</strong> at scale.
+            Open-weight deployments eliminate the API bill but remain expensive in latency and GPU demand.</p>
+          </div>
+        </div>
+
+        <div class="column is-half">
+          <div class="box" style="height:100%; border-left:4px solid #f59e0b;">
+            <p class="title is-5" style="color:#b45309;">
+              <i class="fas fa-eye-slash" style="margin-right:0.4rem;"></i>Opaque Logic
+            </p>
+            <p>LLMs can produce justifications, but their internal decision process is <strong>opaque</strong>:
+            it is <strong>hard to verify</strong> whether a verdict reflects genuine reasoning or hallucination.</p>
+          </div>
+        </div>
+
+        <div class="column is-half">
+          <div class="box" style="height:100%; border-left:4px solid #8b5cf6;">
+            <p class="title is-5" style="color:#7c3aed;">
+              <i class="fas fa-balance-scale" style="margin-right:0.4rem;"></i>Systemic Bias
+            </p>
+            <p>LLM judges favor verbosity, rich formatting, and emotionally charged language—
+            stylistic signals that <strong>undermine reliability</strong> independent of actual response quality.</p>
+          </div>
+        </div>
+
+        <div class="column is-half">
+          <div class="box" style="height:100%; border-left:4px solid #10b981;">
+            <p class="title is-5" style="color:#059669;">
+              <i class="fas fa-redo" style="margin-right:0.4rem;"></i>Re-inference Tax
+            </p>
+            <p>Prompting pipelines are inflexible. Revising even one rubric criterion requires
+            <strong>re-running inference over the entire dataset</strong>, incurring redundant cost and wasted cycles.</p>
+          </div>
+        </div>
+
+      </div>
+
+      <p class="has-text-centered" style="margin-top:1.75rem; font-size:1.1rem;">
+        <i>How do we address these?</i> We propose a single shift:
+        <strong>distill the judging logic into executable Python programs.</strong>
+      </p>
     </div>
   </div>
 </section>
-<!-- End main result figure -->
 
 
-<!-- How it works -->
+<!-- ================================================================
+     3. HOW PAJAMA WORKS
+     ================================================================ -->
 <section class="hero is-small is-light">
   <div class="hero-body">
     <div class="container is-max-desktop">
       <h2 class="title is-3 has-text-centered">How PAJAMA Works</h2>
-      <div class="content">
-        <ol>
-          <li><strong>Program Generation</strong> — Generates 80 judge programs (10 evaluation rubrics × 8 variants each). Each program takes a query and a response, then returns a float score using only built-in Python (no ML libraries), making them fast and deterministic.</li>
-          <li><strong>Program Execution</strong> — Each program scores both responses in a pairwise comparison, producing a label matrix over the dataset.</li>
-          <li><strong>Program Output Modeling</strong> — Per-program thresholds are tuned on a validation set, low-accuracy programs are filtered, and weak supervision's Label Model learns per-program accuracy weights to produce final preference predictions.</li>
-          <li><strong>Reward Model Training (Optional)</strong> — The predicted labels are used to fine-tune a Qwen2.5-3B reward model for downstream use.</li>
-        </ol>
+
+      <figure class="image" style="margin-bottom:1rem;">
+        <img src="static/images/framework.png"
+             alt="PAJAMA workflow diagram: program synthesis, execution, aggregation, and LLM routing."
+             style="width:100%; border-radius:8px;" />
+      </figure>
+      <p class="has-text-centered" style="color:#666; margin-bottom:2rem; font-size:0.95rem;">
+        Given a query and two candidate responses, an LLM synthesizes a pool of programmatic judges from curated rubrics.
+        Reliable programs are selected, their verdicts aggregated via weak supervision,
+        and uncertain cases routed to an LLM fallback.
+      </p>
+
+      <div class="columns is-multiline">
+
+        <div class="column is-half">
+          <h4 class="title is-4" style="display:flex; align-items:flex-start;">
+            <span style="display:inline-flex; align-items:center; justify-content:center; min-width:2.1rem; height:2.1rem; background:#2563eb; color:white; border-radius:50%; font-size:1.1rem; font-weight:800; margin-right:0.75rem; margin-top:0.05rem;">1</span>
+            Program Synthesis
+          </h4>
+          <p>
+            An LLM (e.g., Claude Sonnet 4.6) is prompted <em>once</em> to generate <strong>candidate judge programs</strong>
+            (we use 10 evaluation rubrics × 8 variants each). Rubrics can cover Relevance, Readability, Completeness, Coherence,
+            Clarity, Structure, and more. Each program is a pure Python function
+            <code>judging_function(query, response) → float</code> using only built-in libraries—no ML, no GPU.
+            A text-similarity filter removes near-duplicate logic to ensure committee diversity.
+          </p>
+        </div>
+
+        <div class="column is-half">
+          <h4 class="title is-4" style="display:flex; align-items:flex-start;">
+            <span style="display:inline-flex; align-items:center; justify-content:center; min-width:2.1rem; height:2.1rem; background:#2563eb; color:white; border-radius:50%; font-size:1.1rem; font-weight:800; margin-right:0.75rem; margin-top:0.05rem;">2</span>
+            Execution &amp; Calibration
+          </h4>
+          <p>
+            Each program scores both responses; min-max normalization maps outputs to [0,&thinsp;1].
+            A <strong>per-program threshold τ<sub>j</sub></strong> converts the quality-difference into a
+            discrete vote ∈ {−1,&thinsp;0,&thinsp;+1}, where 0 signals abstention.
+            Thresholds are tuned on a small-size held-out validation set.
+            Programs scoring below random chance (50%) are dropped; the <strong>top-k</strong>
+            by validation accuracy form the final committee.
+          </p>
+        </div>
+
+        <div class="column is-half">
+          <h4 class="title is-4" style="display:flex; align-items:flex-start;">
+            <span style="display:inline-flex; align-items:center; justify-content:center; min-width:2.1rem; height:2.1rem; background:#2563eb; color:white; border-radius:50%; font-size:1.1rem; font-weight:800; margin-right:0.75rem; margin-top:0.05rem;">3</span>
+            Aggregation via Weak Supervision
+          </h4>
+          <p>
+            Committee votes are treated as noisy labeling functions.
+            A <strong>Label Model</strong> (e.g., Snorkel framework) learns per-program accuracy weights
+            from agreement and disagreement patterns, then combines votes into a single probabilistic
+            preference label—robust to individual errors and conflicting signals.
+          </p>
+        </div>
+
+        <div class="column is-half">
+          <h4 class="title is-4" style="display:flex; align-items:flex-start;">
+            <span style="display:inline-flex; align-items:center; justify-content:center; min-width:2.1rem; height:2.1rem; background:#2563eb; color:white; border-radius:50%; font-size:1.1rem; font-weight:800; margin-right:0.75rem; margin-top:0.05rem;">4</span>
+            Routing Uncertain Cases
+          </h4>
+          <p>
+            When every program abstains or the aggregator's posterior is near 0.5, the pair is flagged
+            as <em>low-confidence</em> and escalated to an LLM judge.
+            Two routing signals are used: <strong>vote variance</strong> (disagreement among programs)
+            and <strong>aggregator posterior</strong> (prediction confidence).
+            This hybrid design trades a small fraction of LLM calls for improved accuracy on hard cases.
+          </p>
+        </div>
+
       </div>
     </div>
   </div>
 </section>
-<!-- End how it works -->
 
 
-<!-- Demo video -->
+<!-- ================================================================
+     4. TRANSITION — Summary + Results Header
+     ================================================================ -->
 <section class="hero is-small">
   <div class="hero-body">
-    <div class="container">
-      <h2 class="title is-3">Interactive Demo</h2>
-      <div class="columns is-centered has-text-centered">
+    <div class="container is-max-desktop" style="max-width:720px;">
+      <p style="font-size:1.05rem; line-height:1.75;">
+        That is, PAJAMA is a framework for building programmatic judges that can be used to evaluate the quality of text responses.
+        We validate PAJAMA on five preference datasets across four model families and confirm three claims:
+        <strong>(1)</strong> programmatic judges match mid-sized LLM judges on accuracy at far higher throughput,
+        <strong>(2)</strong> hybrid routing strictly advances the accuracy–throughput Pareto frontier, and
+        <strong>(3)</strong> programmatic labels train competitive reward models at 45–50× lower cost than proprietary supervision.
+      </p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ================================================================
+     5. RESULT 1 — Accuracy & Throughput
+     ================================================================ -->
+<section class="hero is-small is-light" style="padding-bottom:0;">
+  <div class="hero-body" style="padding-bottom:1rem;">
+    <div class="container is-max-desktop">
+      <h2 class="title is-2 has-text-centered" style="letter-spacing:0.05em; color:#1a1a2e;">Results</h2>
+    </div>
+  </div>
+</section>
+
+
+<!-- ================================================================
+     5a. RESULT 1 — Accuracy & Throughput
+     ================================================================ -->
+<section class="hero is-small">
+  <div class="hero-body">
+    <div class="container is-max-desktop">
+      <h2 class="title is-3 has-text-centered">Can Programmatic Judges Match LLM Judges?</h2>
+
+      <div class="content" style="max-width:720px; margin:0 auto 1.75rem;">
+        <p>
+          LLM judges are accurate but slow and expensive—often taking seconds per sample and costing
+          dollars per thousand calls. We ask: <em>can a committee of synthesized Python programs match
+          a mid-sized LLM judge on accuracy while running orders of magnitude faster?</em>
+        </p>
+        <p>
+          <strong>Setup.</strong> We evaluate on five pairwise preference datasets—JudgeLM, PandaLM,
+          MultiPref, Prometheus, and Preference-700K—sampling 5,000 test examples per dataset with
+          500 held-out for calibration. Programs are synthesized once with Claude Sonnet 4.6.
+          Baselines include proprietary judges (GPT-4.1, GPT-5 Thinking) and four open-weight model
+          families (OLMo-2, Gemma-3, Qwen2.5), all served via vLLM at 64 concurrent requests.
+        </p>
+      </div>
+
+      <figure class="image">
+        <img src="static/images/effectiveness.jpg"
+             alt="Accuracy vs. throughput across five preference datasets and their average. Programmatic judges occupy a high-throughput regime no LLM can reach."
+             loading="lazy" style="border-radius:8px;" />
+      </figure>
+
+      <div class="content" style="margin-top:1.25rem; max-width:720px; margin-left:auto; margin-right:auto;">
+        <p class="has-text-centered" style="font-size:0.9rem; color:#555;">
+          <strong>Figure.</strong> Accuracy vs. throughput across five preference datasets.
+        </p>
+        <ul>
+          <li>Programmatic judges reach an average accuracy of <strong>78.11%</strong>—on par with
+              OLMo-2-13B-Instruct and Qwen2.5-3B-Instruct—while running <strong>47.25× faster</strong>.</li>
+          <li>On Prometheus, just <strong>8 programs</strong> reach 88.78%, matching OLMo-2-7B-Instruct.</li>
+          <li>Against large variants (Qwen2.5-14B, Gemma-3-12B), programs run ~<strong>50× faster</strong>
+              while approaching their accuracy.</li>
+        </ul>
+        <div class="notification is-link is-light" style="margin-top:1.25rem; border-left:4px solid #2563eb;">
+          <strong>Takeaway.</strong>
+          A committee of fewer than twenty synthesized programs matches mid-sized LLM judges on accuracy
+          while occupying a throughput regime no LLM can reach—running 2× faster than the smallest model
+          tested while outperforming it by over 30 accuracy points on some datasets.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ================================================================
+     6. RESULT 2 — Pareto Frontier
+     ================================================================ -->
+<section class="hero is-small is-light">
+  <div class="hero-body">
+    <div class="container is-max-desktop">
+      <h2 class="title is-3 has-text-centered">Can Hybrid Evaluation Push the Pareto Frontier?</h2>
+
+      <div class="content" style="max-width:720px; margin:0 auto 1.75rem;">
+        <p>
+          Standalone programs handle most pairs efficiently, but ambiguous cases may still benefit from
+          an LLM. We ask: <em>if programs route only the uncertain cases to an LLM, does the hybrid system
+          outperform what either approach achieves alone?</em>
+        </p>
+        <p>
+          <strong>Setup.</strong> We evaluate a staged policy where every pair is first scored by the
+          program committee; low-confidence pairs—flagged by <strong>vote variance</strong> or
+          <strong>aggregator posterior</strong>—are escalated to an LLM. Sweeping the escalation threshold
+          traces the full hybrid accuracy–throughput curve. We compare against three baselines that route
+          by query length, response length, or random selection.
+        </p>
+      </div>
+
+      <figure class="image">
+        <img src="static/images/olmo_image_new.png"
+             alt="Routing within the OLMo-2 family: accuracy vs. throughput as the escalation threshold is swept across routing signals for 1B, 7B, and 13B model sizes."
+             loading="lazy" style="width:100%; border-radius:8px;" />
+      </figure>
+
+      <div class="content" style="margin-top:1.25rem; max-width:720px; margin-left:auto; margin-right:auto;">
+        <p class="has-text-centered" style="font-size:0.9rem; color:#555;">
+          <strong>Figure.</strong> Routing within the OLMo-2 family.
+          Accuracy vs. throughput as the escalation threshold is swept across different routing signals.
+          Endpoints represent pure-program (right) and pure-LLM (left) evaluation.
+        </p>
+      </div>
+
+      <figure class="image" style="margin-top:2rem;">
+        <img src="static/images/pareto_sidebyside.png"
+             alt="Hybrid evaluation Pareto frontier across OLMo-2, Gemma-3, and Qwen2.5. The red PAJAMA envelope dominates the gray LLM-only envelope at every throughput level."
+             loading="lazy" style="width:100%; border-radius:8px;" />
+      </figure>
+
+      <div class="content" style="margin-top:1.25rem; max-width:720px; margin-left:auto; margin-right:auto;">
+        <p class="has-text-centered" style="font-size:0.9rem; color:#555;">
+          <strong>Figure.</strong> Hybrid evaluation pushes the Pareto frontier further across 12 LLM judges.
+          Each dashed line traces one judge's hybrid trajectory as the threshold is swept;
+          the <span style="color:#c0392b;"><strong>red envelope</strong></span> is the resulting PAJAMA frontier;
+          the gray envelope is LLM-only.
+        </p>
+        <ul>
+          <li>PAJAMA-derived signals consistently dominate length-based and random routing baselines at every throughput budget.</li>
+          <li><strong>This leads to OLMo-2-7B-Instruct:</strong> +5.0% accuracy at 2.9× higher throughput.</li>
+          <li><strong>This leads to Qwen2.5-3B-Instruct:</strong> +2.6% accuracy at 2.2× higher throughput.</li>
+          <li>Moreover, the fallback mechanism adds negligible latency overhead compared to model-based routers.</li>
+        </ul>
+        <div class="notification is-link is-light" style="margin-top:1.25rem; border-left:4px solid #2563eb;">
+          <strong>Takeaway.</strong>
+          Program-derived routing signals strictly dominate every baseline tested: at any throughput level
+          they yield higher accuracy, and at any accuracy level they yield higher throughput.
+          Because the routing decision is derived from the programs already running, it adds negligible
+          overhead—unlike model-based routers that require an additional forward pass.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ================================================================
+     7. RESULT 3 — Reward Model Distillation
+     ================================================================ -->
+<section class="hero is-small">
+  <div class="hero-body">
+    <div class="container is-max-desktop">
+      <h2 class="title is-3 has-text-centered">Are Programmatic Labels Good Enough for Reward Models?</h2>
+
+      <div class="content" style="max-width:720px; margin:0 auto 1.75rem;">
+        <p>
+          LLM judges are widely used to generate preference labels for reward model training, but proprietary
+          APIs make this expensive at scale. We ask: <em>can programmatic labels replace proprietary LLM
+          supervision for reward model distillation—at a fraction of the cost?</em>
+        </p>
+        <p>
+          <strong>Setup.</strong> We sample 20,000 preference pairs from Prometheus and JudgeLM,
+          relabel them with PAJAMA's programs, and fine-tune Qwen2.5-3B-Instruct under the
+          Bradley–Terry objective. We compare against the same pipeline using original GPT-4 labels,
+          evaluating in-domain accuracy and out-of-domain generalization on RewardBench
+          (Chat, Chat Hard, Reasoning).
+        </p>
+      </div>
+
+      <div style="max-width:720px; margin:0 auto;">
+        <div class="table-container">
+          <table class="table is-bordered is-hoverable is-fullwidth" style="font-size:0.875rem;">
+            <thead>
+              <tr>
+                <th rowspan="2">Labeling Source</th>
+                <th rowspan="2">API Calls</th>
+                <th rowspan="2">Estimated Cost</th>
+                <th rowspan="2" style="text-align:center;">In-domain<br>Acc.</th>
+                <th colspan="4" style="text-align:center; background:#f0f4ff; border-bottom:2px solid #2563eb;">
+                  RewardBench
+                </th>
+              </tr>
+              <tr>
+                <th style="text-align:center; background:#f0f4ff;">Chat</th>
+                <th style="text-align:center; background:#f0f4ff;">Chat Hard</th>
+                <th style="text-align:center; background:#f0f4ff;">Reasoning</th>
+                <th style="text-align:center; background:#f0f4ff;">Avg.</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td colspan="8" style="background:#ececec; font-weight:600; font-size:0.82rem;">
+                  Trained on Prometheus Dataset
+                </td>
+              </tr>
+              <tr>
+                <td>GPT-4</td>
+                <td>20,000 samples</td>
+                <td>$363.97</td>
+                <td style="text-align:center;">97.23</td>
+                <td style="text-align:center;">68.44</td>
+                <td style="text-align:center;"><strong>40.79</strong></td>
+                <td style="text-align:center;">55.70</td>
+                <td style="text-align:center;">54.98</td>
+              </tr>
+              <tr style="background:#e8f4fd;">
+                <td><strong>PAJAMA</strong></td>
+                <td>80 programs (one-time)</td>
+                <td><strong>$7.21 &nbsp;(50× cheaper)</strong></td>
+                <td style="text-align:center;">92.20</td>
+                <td style="text-align:center;"><strong>79.33</strong></td>
+                <td style="text-align:center;">30.04</td>
+                <td style="text-align:center;"><strong>60.58</strong></td>
+                <td style="text-align:center;"><strong>56.65 &nbsp;(+1.67)</strong></td>
+              </tr>
+              <tr>
+                <td colspan="8" style="background:#ececec; font-weight:600; font-size:0.82rem;">
+                  Trained on JudgeLM Dataset
+                </td>
+              </tr>
+              <tr>
+                <td>GPT-4</td>
+                <td>20,000 samples</td>
+                <td>$296.37</td>
+                <td style="text-align:center;">90.24</td>
+                <td style="text-align:center;">67.88</td>
+                <td style="text-align:center;">38.82</td>
+                <td style="text-align:center;">65.13</td>
+                <td style="text-align:center;">57.28</td>
+              </tr>
+              <tr style="background:#e8f4fd;">
+                <td><strong>PAJAMA</strong></td>
+                <td>80 programs (one-time)</td>
+                <td><strong>$6.49 &nbsp;(45× cheaper)</strong></td>
+                <td style="text-align:center;">82.79</td>
+                <td style="text-align:center;"><strong>67.88</strong></td>
+                <td style="text-align:center;"><strong>44.52</strong></td>
+                <td style="text-align:center;"><strong>72.91</strong></td>
+                <td style="text-align:center;"><strong>61.77 &nbsp;(+4.49)</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="content" style="margin-top:1.25rem; max-width:720px; margin-left:auto; margin-right:auto;">
+          <p class="has-text-centered" style="font-size:0.9rem; color:#555;">
+            <strong>Table.</strong> Reward model distillation with PAJAMA vs. GPT-4 labels.
+          </p>
+          <ul>
+            <li>In-domain, PAJAMA labels yield competitive accuracy at roughly <strong>50× lower API cost</strong>
+                (92.20% vs. 97.23% on Prometheus; 82.79% vs. 90.24% on JudgeLM).</li>
+            <li>Out-of-domain on RewardBench, PAJAMA-trained models <strong>outperform GPT-4-trained ones</strong>
+                on average: +1.67 points on Prometheus and +4.49 points on JudgeLM.</li>
+            <li>The largest gains come from <strong>Reasoning</strong> (+4.88 on Prometheus, +7.78 on JudgeLM)
+                and <strong>Chat</strong> (+10.89 on Prometheus), where programmatic judges encode explicit
+                quality criteria that transfer well out-of-domain.</li>
+            <li>Program synthesis cost is <strong>O(1)</strong>—fixed regardless of dataset size—while GPT-4
+                labeling scales <strong>O(n)</strong>, so the cost gap widens as more pairs are labeled.</li>
+          </ul>
+        <div class="notification is-link is-light" style="margin-top:1.25rem; border-left:4px solid #2563eb;">
+          <strong>Takeaway.</strong>
+          Programmatic judges are an attractive labeling source for alignment workflows with limited annotation budgets.
+          Out-of-domain, PAJAMA-trained reward models actually <em>outperform</em> GPT-4-trained ones on RewardBench—
+          gaining +1.67 points on Prometheus and +4.49 on JudgeLM—while costing 45–50× less.
+          As the dataset grows, the cost advantage widens further since synthesis cost is fixed.
+        </div>
+        </div><!-- end .content -->
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ================================================================
+     8. KEY CONTRIBUTIONS
+     ================================================================ -->
+<section class="hero is-small is-light">
+  <div class="hero-body">
+    <div class="container is-max-desktop">
+      <h2 class="title is-3 has-text-centered">Key Contributions</h2>
+
+      <div class="columns is-multiline">
+
+        <div class="column is-half">
+          <div class="box" style="height:100%;">
+            <p class="title is-5">
+              <span style="color:#2563eb; margin-right:0.4rem;">①</span>A New Evaluation Paradigm
+            </p>
+            <p>We distill LLM judging logic into a committee of executable Python programs, replacing
+            per-sample model inference with a one-time synthesis and fast local execution.</p>
+          </div>
+        </div>
+
+        <div class="column is-half">
+          <div class="box" style="height:100%;">
+            <p class="title is-5">
+              <span style="color:#2563eb; margin-right:0.4rem;">②</span>The PAJAMA System
+            </p>
+            <p>A hybrid evaluation system that synthesizes diverse programmatic judges, calibrates and
+            aggregates their verdicts via weak supervision, then routes uncertain cases to an LLM fallback.</p>
+          </div>
+        </div>
+
+        <div class="column is-half">
+          <div class="box" style="height:100%;">
+            <p class="title is-5">
+              <span style="color:#2563eb; margin-right:0.4rem;">③</span>Advancing the Pareto Frontier
+            </p>
+            <p>Across four model families, PAJAMA matches strong LLMs at a fraction of the cost and
+            pushes the accuracy–throughput Pareto frontier beyond what any LLM-only system can reach.</p>
+          </div>
+        </div>
+
+        <div class="column is-half">
+          <div class="box" style="height:100%;">
+            <p class="title is-5">
+              <span style="color:#2563eb; margin-right:0.4rem;">④</span>Cheap, High-Quality Reward Signals
+            </p>
+            <p>Reward models distilled from programmatic judges outperform those trained on proprietary
+            GPT-4 labels on RewardBench, at 45–50× lower labeling cost.</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ================================================================
+     9. DEMO
+     ================================================================ -->
+<section class="hero is-small">
+  <div class="hero-body">
+    <div class="container is-max-desktop">
+      <h2 class="title is-3 has-text-centered">Interactive Demo</h2>
+      <div class="columns is-centered">
         <div class="column is-four-fifths">
-          <p class="subtitle">
-            PAJAMA ships with an interactive <strong>Evaluation Studio</strong> built in Streamlit.
+          <p class="subtitle has-text-centered">
+            PAJAMA ships with an <strong>Evaluation Studio</strong> built in Streamlit.
             Inspect individual judge programs, edit them, regenerate via chat, and download labeled datasets.
           </p>
-          <div class="publication-video" style="background:#f5f5f5; border:2px dashed #ccc; border-radius:8px; display:flex; align-items:center; justify-content:center; min-height:360px;">
-            <p style="color:#999; font-size:1.2rem;"><i class="fas fa-video" style="margin-right:0.5rem;"></i>Demo video coming soon</p>
+          <div class="publication-video">
+            <video controls style="width:100%; border-radius:8px;">
+              <source src="static/video/demo.mp4" type="video/mp4">
+              Your browser does not support the video tag.
+            </video>
           </div>
         </div>
       </div>
     </div>
   </div>
 </section>
-<!-- End demo video -->
 
 
-<!--BibTex citation -->
-  <section class="section" id="BibTeX">
-    <div class="container is-max-desktop content">
-      <h2 class="title">Citation</h2>
-      <p>If you like this work and are using these datasets, please cite the original benchmark papers and our PAJAMA!</p>
+<!-- ================================================================
+     10. CITATION
+     ================================================================ -->
+<section class="section" id="BibTeX">
+  <div class="container is-max-desktop content">
+    <h2 class="title">Citation</h2>
+    <p>If you find this work useful, please cite our paper.
+       If you use the preference datasets, also cite the original benchmark papers.</p>
 
-      <p><strong>Our Latest Version:</strong></p>
-      <pre><code>@article{huang2026codifying,
-  title={Codifying the Judge: Scalable Evaluation via Program Distillation},
-  author={Huang, Tzu-Heng and Qiu, Shengqi and Sala, Frederic},
-  journal={},
-  year={2026}
+    <p><strong>Latest Version:</strong></p>
+    <pre><code>@article{huang2026codifying,
+  title   = {Codifying the Judge: Scalable Evaluation via Program Distillation},
+  author  = {Huang, Tzu-Heng and Qiu, Shengqi and Sala, Frederic},
+  year    = {2026}
 }</code></pre>
 
-      <p><strong>Our Preliminary Version</strong> (appeared in ICML 2025 Workshop: Programmatic Representations for Agent Learning (PRAL)):</p>
-      <pre><code>@article{huang2025time,
-  title={Time to Impeach LLM-as-a-Judge: Programs are the Future of Evaluation},
-  author={Huang, Tzu-Heng and Vishwakarma, Harit and Sala, Frederic},
-  journal={arXiv preprint arXiv:2506.10403},
-  year={2025}
+    <p><strong>Preliminary Workshop Version</strong>
+       (ICML 2025 Workshop: Programmatic Representations for Agent Learning):</p>
+    <pre><code>@article{huang2025time,
+  title   = {Time to Impeach LLM-as-a-Judge: Programs are the Future of Evaluation},
+  author  = {Huang, Tzu-Heng and Vishwakarma, Harit and Sala, Frederic},
+  journal = {arXiv preprint arXiv:2506.10403},
+  year    = {2025}
 }</code></pre>
-    </div>
+  </div>
 </section>
-<!--End BibTex citation -->
 
+</main>
 
-  <footer class="footer">
+<footer class="footer">
   <div class="container">
     <div class="columns is-centered">
       <div class="column is-8">
         <div class="content">
-
           <p>
-            This page was built using the <a href="https://github.com/eliahuhorwitz/Academic-project-page-template" target="_blank">Academic Project Page Template</a> which was adopted from the <a href="https://nerfies.github.io" target="_blank">Nerfies</a> project page.
-            You are free to borrow the source code of this website, we just ask that you link back to this page in the footer. <br> This website is licensed under a <a rel="license"  href="http://creativecommons.org/licenses/by-sa/4.0/" target="_blank">Creative
-            Commons Attribution-ShareAlike 4.0 International License</a>.
+            This page was built using the
+            <a href="https://github.com/eliahuhorwitz/Academic-project-page-template" target="_blank">Academic Project Page Template</a>
+            adopted from the <a href="https://nerfies.github.io" target="_blank">Nerfies</a> project page.
+            You are free to borrow the source code; we just ask that you link back to this page in the footer.
+            <br>
+            Licensed under a
+            <a rel="license" href="http://creativecommons.org/licenses/by-sa/4.0/" target="_blank">Creative Commons Attribution-ShareAlike 4.0 International License</a>.
           </p>
-
         </div>
       </div>
     </div>
   </div>
 </footer>
 
-  </body>
-  </html>
+</body>
+</html>
