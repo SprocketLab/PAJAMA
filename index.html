@@ -166,11 +166,11 @@
       <div class="columns is-centered">
         <div class="column has-text-centered">
 
-          <h1 class="title is-1 publication-title">
-            Codifying the Judge: Scalable Evaluation via Program Distillation
+          <h1 class="title is-2 publication-title">
+            Codifying the Judge:<br>Scalable Evaluation via Program Distillation
           </h1>
 
-          <div class="is-size-5 publication-authors">
+          <div class="is-size-5 publication-authors" style="margin-bottom:0;">
             <span class="author-block">
               <a href="https://zihengh1.github.io/" target="_blank">Tzu-Heng Huang</a><sup>*</sup>,
             </span>
@@ -182,11 +182,11 @@
             </span>
           </div>
 
-          <div class="is-size-6 publication-authors" style="margin-top:0.3rem; color:#666;">
+          <div class="is-size-6 publication-authors" style="margin-top:0; color:#666;">
             <sup>*</sup>Equal Contribution
           </div>
 
-          <div class="is-size-5 publication-authors" style="margin-top:0.4rem;">
+          <div class="is-size-5 publication-authors" style="margin-top:0;">
             University of Wisconsin-Madison
           </div>
 
@@ -241,7 +241,7 @@
 <section class="hero is-small">
   <div class="hero-body">
     <div class="container is-max-desktop">
-      <h2 class="title is-3 has-text-centered">Challenges of Using LLM-as-a-Judge</h2>
+      <h2 class="title is-3 has-text-centered">LLM-as-a-Judge Challenges</h2>
       <p class="has-text-centered" style="max-width:600px; margin:0 auto 2rem;">
         LLM-as-a-judge has become the default for automated evaluation—but four fundamental challenges
         limit its <strong>scalability</strong> and <strong>reliability</strong>.
@@ -314,9 +314,9 @@
              style="width:100%; border-radius:8px;" />
       </figure>
       <p class="has-text-centered" style="color:#666; margin-bottom:2rem; font-size:0.95rem;">
-        Given a query and two candidate responses, an LLM synthesizes a pool of programmatic judges from curated rubrics.
-        Reliable programs are selected, their verdicts aggregated via weak supervision,
-        and uncertain cases routed to an LLM fallback.
+        Given a query and two candidate responses, a diverse pool of programmatic judges---synthesized by an LLM from curated rubrics---produces initial evaluations.
+        These program outputs are calibrated and selected, and their verdicts are aggregated into a combined decision.
+        Uncertain cases are then routed to an LLM judge to produce the final preference.
       </p>
 
       <div class="columns is-multiline">
@@ -557,7 +557,7 @@
         </p>
       </div>
 
-      <div style="max-width:720px; margin:0 auto;">
+      <div style="max-width:1000px; margin:0 auto;">
         <div class="table-container">
           <table class="table is-bordered is-hoverable is-fullwidth" style="font-size:0.875rem;">
             <thead>
@@ -710,6 +710,15 @@
           </div>
         </div>
 
+        <div class="column is-full">
+          <div class="notification" style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-left: 4px solid #2563eb; border-radius: 8px; margin-top: 0.5rem;">
+            <p class="has-text-centered" style="font-size: 1.05rem;">
+              <span style="font-size: 1.2rem; margin-right: 0.4rem;">💡</span>
+              <strong>Still calling ChatGPT / Claude / Gemini for every evaluation?</strong>
+              &nbsp;Synthesize your programmatic judges once and run them locally — same quality, a fraction of the cost.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -748,8 +757,8 @@
 <section class="section" id="BibTeX">
   <div class="container is-max-desktop content">
     <h2 class="title">Citation</h2>
-    <p>If you find this work useful, please cite our paper.
-       If you use the preference datasets, also cite the original benchmark papers.</p>
+    <p>If you find this work useful and interesting, please cite our paper.
+       If you are playing with the preference datasets, also cite the original benchmark papers!</p>
 
     <p><strong>Latest Version:</strong></p>
     <pre><code>@article{huang2026codifying,
@@ -759,7 +768,7 @@
 }</code></pre>
 
     <p><strong>Preliminary Workshop Version</strong>
-       (ICML 2025 Workshop: Programmatic Representations for Agent Learning):</p>
+       (accepted at ICML 2025 PRAL Workshop: Programmatic Representations for Agent Learning):</p>
     <pre><code>@article{huang2025time,
   title   = {Time to Impeach LLM-as-a-Judge: Programs are the Future of Evaluation},
   author  = {Huang, Tzu-Heng and Vishwakarma, Harit and Sala, Frederic},
