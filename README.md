@@ -91,7 +91,7 @@ If you like this work and are playing these datasets, please cite the original b
 @article{huang2026codifying,
   title={Codifying the Judge: Scalable Evaluation via Program Distillation},
   author={Huang, Tzu-Heng and  Qiu, Shengqi and Sala, Frederic},
-  journal={},
+  journal={arXiv preprint arXiv:2607.22561},
   year={2026}
 }
 ```
